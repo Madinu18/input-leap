@@ -107,6 +107,10 @@ packet and, when both sides support it, sends mouse motion over an
 encrypted UDP fast path. See [doc/low-latency.md](doc/low-latency.md)
 for the design, the new options and WiFi tuning advice.
 
+Windows-specific issues (Scroll Lock, clipboard after switching screens,
+and the background service) are covered in
+[doc/windows-troubleshooting.md](doc/windows-troubleshooting.md).
+
 ## FAQ - Frequently Asked Questions
 
 **Q: Input Leap vs. barrier?**
