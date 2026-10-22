@@ -229,6 +229,7 @@ private:
     bool m_enableClipboard;
     size_t m_maximumClipboardSize;
     bool m_fastPathSupported;
+    double m_fastPathLastMotion;
 };
 
 } // namespace inputleap

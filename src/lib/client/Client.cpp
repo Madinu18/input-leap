@@ -75,7 +75,8 @@ Client::Client(IEventQueue* events, const std::string& name, const NetworkAddres
     m_args(args),
     m_enableClipboard(true),
     m_maximumClipboardSize(INT_MAX),
-    m_fastPathSupported(false)
+    m_fastPathSupported(false),
+    m_fastPathLastMotion(0.0)
 {
     assert(m_socketFactory != nullptr);
     assert(m_screen != nullptr);
@@ -330,11 +331,22 @@ Client::mouseUp(ButtonID id)
 
 void Client::mouseMove(std::int32_t x, std::int32_t y)
 {
+    // While the UDP fast path is delivering motion, ignore motion that
+    // arrives over TCP. The two transports are not ordered relative to
+    // each other, so applying both could move the cursor backwards during
+    // the switch. The server falls back to TCP after one second without
+    // heartbeats, which matches this timeout.
+    if (current_time_seconds() - m_fastPathLastMotion < 1.0) {
+        return;
+    }
     m_screen->mouseMove(x, y);
 }
 
 void Client::mouseRelativeMove(std::int32_t dx, std::int32_t dy)
 {
+    if (current_time_seconds() - m_fastPathLastMotion < 1.0) {
+        return;
+    }
     m_screen->mouseRelativeMove(dx, dy);
 }
 
@@ -360,6 +372,7 @@ void Client::start_fast_path(int port, std::uint32_t session,
 void Client::stop_fast_path()
 {
     m_fastPath.reset();
+    m_fastPathLastMotion = 0.0;
 }
 
 void Client::handle_fast_path_motion(const Event& event)
@@ -369,6 +382,7 @@ void Client::handle_fast_path_motion(const Event& event)
     }
 
     const auto& info = event.get_data_as<FastPathMotionInfo>();
+    m_fastPathLastMotion = current_time_seconds();
     if (info.relative) {
         m_screen->mouseRelativeMove(info.x, info.y);
     }
