@@ -100,6 +100,13 @@ specific packages.
 
 <!-- TODO: Move the FAQ to the wiki, link here. Keep the README short and simple. -->
 
+## Low-latency input
+
+InputLeap coalesces mouse motion, writes each small message as a single
+packet and, when both sides support it, sends mouse motion over an
+encrypted UDP fast path. See [doc/low-latency.md](doc/low-latency.md)
+for the design, the new options and WiFi tuning advice.
+
 ## FAQ - Frequently Asked Questions
 
 **Q: Input Leap vs. barrier?**
