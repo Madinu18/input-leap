@@ -53,7 +53,8 @@ ClientProxy1_6::ClientProxy1_6(const std::string& name,
     m_pendingX(0),
     m_pendingY(0),
     m_motionTimer(nullptr),
-    m_fastPathSession(0)
+    m_fastPathSession(0),
+    m_disconnected(false)
 {
     m_motionRate = m_server->motion_rate();
     // install event handlers
@@ -100,6 +101,8 @@ void ClientProxy1_6::disconnect()
 
 void ClientProxy1_6::remove_handlers()
 {
+    m_disconnected = true;
+
     if (m_fastPathSession != 0) {
         m_server->remove_fast_path_session(m_fastPathSession);
         m_fastPathSession = 0;
@@ -221,7 +224,7 @@ void ClientProxy1_6::flush_pending_motion()
         m_motionTimer = nullptr;
     }
 
-    if (!m_hasPendingMotion) {
+    if (m_disconnected || !m_hasPendingMotion) {
         return;
     }
 
@@ -462,6 +465,10 @@ void ClientProxy1_6::mouseUp(ButtonID button)
 
 void ClientProxy1_6::mouseMove(std::int32_t xAbs, std::int32_t yAbs)
 {
+    if (m_disconnected) {
+        return;
+    }
+
     if (m_motionRate <= 0.0) {
         send_motion_now(xAbs, yAbs, false);
         return;
@@ -488,6 +495,10 @@ void ClientProxy1_6::mouseMove(std::int32_t xAbs, std::int32_t yAbs)
 
 void ClientProxy1_6::mouseRelativeMove(std::int32_t xRel, std::int32_t yRel)
 {
+    if (m_disconnected) {
+        return;
+    }
+
     if (m_motionRate <= 0.0) {
         send_motion_now(xRel, yRel, true);
         return;

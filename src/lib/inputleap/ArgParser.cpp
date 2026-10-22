@@ -442,10 +442,10 @@ ArgParser::parseGenericArgs(Argv& argv)
         argsBase().m_enableCrypto = false;
     }
     else if (argv.shift("--motion-rate", nullptr, &optarg)) {
-        argsBase().m_motionRate = std::atof(optarg);
-        if (argsBase().m_motionRate < 0.0) {
-            argsBase().m_motionRate = 0.0;
-        }
+        const double rate = std::atof(optarg);
+        // Treat negative and non-finite values as "no limit" instead of
+        // letting a NaN reach the timer code.
+        argsBase().m_motionRate = (rate > 0.0) ? rate : 0.0;
     }
     else if (argv.shift("--no-udp")) {
         argsBase().m_enableUdp = false;

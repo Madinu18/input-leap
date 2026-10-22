@@ -74,6 +74,48 @@ the server's firewall. The client only needs to send outbound datagrams
 first, so stateful firewalls on the client side normally allow the
 replies.
 
+## Fast path wire format
+
+This section is for client implementations (for example an Android
+client) that want to use the UDP fast path.
+
+Control messages travel over the existing TLS/TCP stream:
+
+* Client to server: tag `DFST`, then one byte with the fast path version
+  (`1`).
+* Server to client: tag `CFST`, then one byte version, a two-byte UDP
+  port, a four-byte session id and a four-byte length-prefixed 16-byte
+  session key. All integers are big endian.
+
+The session key is random and unique per connection. It is delivered
+over the authenticated control channel.
+
+UDP datagrams use this layout (all integers big endian):
+
+```
+offset  size  field
+0       4     magic "ILFP"
+4       1     version (1)
+5       1     type: 1 = heartbeat, 2 = absolute motion, 3 = relative motion
+6       1     flags (0)
+7       1     reserved (0)
+8       4     session id
+12      4     sequence number
+16      4     nonce salt
+20      8     payload: x and y as signed 32-bit integers
+28      16    AES-128-GCM authentication tag
+```
+
+Bytes 0-19 are the additional authenticated data (AAD). The 12-byte
+GCM nonce is the four-byte salt followed by the eight-byte sequence
+number. A receiver must drop packets whose sequence number is not
+greater than the last accepted one (replay and duplicate protection).
+
+The client sends a heartbeat every 250 ms. The server considers the
+session active while a heartbeat has arrived within the last second and
+falls back to TCP otherwise. Each direction has its own sequence space:
+heartbeats are numbered by the client, motion by the server.
+
 ## Options
 
 Server (`input-leaps`):

@@ -139,6 +139,10 @@ protected:
 
     // Session id for the encrypted UDP fast path (0 when not negotiated).
     std::uint32_t m_fastPathSession;
+
+    // Set once the proxy is disconnecting; prevents queued motion events
+    // from scheduling timers on a dying object.
+    bool m_disconnected;
 };
 
 } // namespace inputleap
