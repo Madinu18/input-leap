@@ -23,6 +23,7 @@
 #include "base/EventTypes.h"
 #include "base/IEventQueue.h"
 #include "base/Log.h"
+#include "base/XBase.h"
 #include "base/Time.h"
 #include "mt/Thread.h"
 
@@ -222,8 +223,14 @@ FastPathServer::FastPathServer(int port) :
         running_ = true;
         thread_ = new Thread([this]() { receive_loop(); });
     }
-    catch (XArchNetwork& e) {
+    catch (XBase& e) {
         LOG_WARN("failed to start UDP fast path on port %d: %s", port_, e.what());
+        if (socket_ != nullptr) {
+            ARCH->closeSocket(socket_);
+            socket_ = nullptr;
+        }
+    }
+    catch (...) {
         if (socket_ != nullptr) {
             ARCH->closeSocket(socket_);
             socket_ = nullptr;
@@ -451,8 +458,14 @@ FastPathClient::FastPathClient(IEventQueue* events, const EventTarget* target,
         running_ = true;
         thread_ = new Thread([this]() { receive_loop(); });
     }
-    catch (XArchNetwork& e) {
+    catch (XBase& e) {
         LOG_WARN("failed to start UDP fast path client: %s", e.what());
+        if (socket_ != nullptr) {
+            ARCH->closeSocket(socket_);
+            socket_ = nullptr;
+        }
+    }
+    catch (...) {
         if (socket_ != nullptr) {
             ARCH->closeSocket(socket_);
             socket_ = nullptr;
