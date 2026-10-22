@@ -152,6 +152,7 @@ public slots:
         void retranslateMenuBar();
 #if defined(Q_OS_WIN)
         bool isServiceRunning(QString name);
+        bool startService(const QString& name);
 #else
         bool isServiceRunning();
 #endif

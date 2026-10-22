@@ -54,9 +54,11 @@
 #if defined(Q_OS_WIN)
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+#include <shellapi.h>
 #endif
 
 #include <signal.h>
+#include <string>
 
 namespace {
 
@@ -665,6 +667,27 @@ void MainWindow::start_cmd_app()
 
     if (serviceMode)
     {
+        // The GUI only talks to the service over IPC. If the service is
+        // not running (for example after a crash or a manual stop),
+        // pressing Start used to do nothing because the command was
+        // written to a socket that was not connected. Try to start the
+        // service first; the command itself is queued by IpcClient and
+        // sent as soon as the IPC connection is established.
+#if defined(Q_OS_WIN)
+        if (!isServiceRunning("InputLeap")) {
+            appendLogInfo("InputLeap service is not running, starting it");
+            if (!startService("InputLeap")) {
+                appendLogError("could not start the InputLeap service");
+                QMessageBox::warning(
+                    this, tr("Service not running"),
+                    tr("The InputLeap service is not running and could not be "
+                       "started automatically. Please start the service from "
+                       "Windows Services (services.msc), or run InputLeap as "
+                       "administrator."));
+            }
+        }
+#endif
+
         QString command(app + " " + args.join(" "));
         m_IpcClient.sendCommand(command, appConfig().elevateMode());
     }
@@ -1237,34 +1260,124 @@ void MainWindow::on_m_pButtonReload_clicked()
 #if defined(Q_OS_WIN)
 bool MainWindow::isServiceRunning(QString name)
 {
-    SC_HANDLE hSCManager;
-    hSCManager = OpenSCManager(nullptr, nullptr, SC_MANAGER_CONNECT);
+    SC_HANDLE hSCManager = OpenSCManager(nullptr, nullptr, SC_MANAGER_CONNECT);
     if (hSCManager == nullptr) {
-        appendLogError("failed to open a service controller manager, error: " +
-            GetLastError());
+        appendLogError(QString("failed to open the service controller manager, error: %1")
+                           .arg(static_cast<qulonglong>(GetLastError())));
         return false;
     }
 
-    auto array = name.toLocal8Bit();
-
 #if QT_VERSION_MAJOR < 6
-    SC_HANDLE hService = OpenService(hSCManager, array.data(), SERVICE_QUERY_STATUS);
+    const QByteArray serviceName = name.toLocal8Bit();
+    SC_HANDLE hService = OpenServiceA(hSCManager, serviceName.constData(), SERVICE_QUERY_STATUS);
 #else
-    SC_HANDLE hService = OpenService(hSCManager, reinterpret_cast<LPCWSTR>(array.data()), SERVICE_QUERY_STATUS);
+    SC_HANDLE hService = OpenServiceW(hSCManager, reinterpret_cast<LPCWSTR>(name.utf16()),
+                                      SERVICE_QUERY_STATUS);
 #endif
     if (hService == nullptr) {
         appendLogDebug("failed to open service: " + name);
+        CloseServiceHandle(hSCManager);
         return false;
     }
 
+    bool running = false;
     SERVICE_STATUS status;
     if (QueryServiceStatus(hService, &status)) {
-        if (status.dwCurrentState == SERVICE_RUNNING) {
-            return true;
+        running = (status.dwCurrentState == SERVICE_RUNNING ||
+                   status.dwCurrentState == SERVICE_START_PENDING);
+    }
+
+    CloseServiceHandle(hService);
+    CloseServiceHandle(hSCManager);
+    return running;
+}
+
+bool MainWindow::startService(const QString& name)
+{
+    SC_HANDLE hSCManager = OpenSCManager(nullptr, nullptr, SC_MANAGER_CONNECT);
+    if (hSCManager == nullptr) {
+        appendLogError(QString("failed to open the service controller manager, error: %1")
+                           .arg(static_cast<qulonglong>(GetLastError())));
+        return false;
+    }
+
+#if QT_VERSION_MAJOR < 6
+    const QByteArray serviceName = name.toLocal8Bit();
+    SC_HANDLE hService = OpenServiceA(hSCManager, serviceName.constData(),
+                                      SERVICE_START | SERVICE_QUERY_STATUS);
+#else
+    SC_HANDLE hService = OpenServiceW(hSCManager, reinterpret_cast<LPCWSTR>(name.utf16()),
+                                      SERVICE_START | SERVICE_QUERY_STATUS);
+#endif
+    if (hService == nullptr) {
+        appendLogError(QString("failed to open service \"%1\", error: %2")
+                           .arg(name).arg(static_cast<qulonglong>(GetLastError())));
+        CloseServiceHandle(hSCManager);
+        return false;
+    }
+
+    bool started = false;
+    if (StartService(hService, 0, nullptr)) {
+        started = true;
+    }
+    else {
+        const DWORD error = GetLastError();
+        if (error == ERROR_SERVICE_ALREADY_RUNNING) {
+            started = true;
+        }
+        else if (error == ERROR_ACCESS_DENIED) {
+            // Starting a service usually requires administrator rights.
+            // Ask for elevation and let sc.exe start it.
+            appendLogInfo("requesting elevation to start the InputLeap service");
+            SHELLEXECUTEINFOW executeInfo{};
+            executeInfo.cbSize = sizeof(executeInfo);
+            executeInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
+            executeInfo.lpVerb = L"runas";
+            executeInfo.lpFile = L"sc.exe";
+            const std::wstring parameters = L"start " + name.toStdWString();
+            executeInfo.lpParameters = parameters.c_str();
+            executeInfo.nShow = SW_HIDE;
+
+            if (ShellExecuteExW(&executeInfo)) {
+                if (executeInfo.hProcess != nullptr) {
+                    WaitForSingleObject(executeInfo.hProcess, 10000);
+                    CloseHandle(executeInfo.hProcess);
+                }
+                started = true;
+            }
+            else {
+                appendLogError(QString("failed to elevate and start the service, error: %1")
+                                   .arg(static_cast<qulonglong>(GetLastError())));
+            }
+        }
+        else {
+            appendLogError(QString("failed to start service \"%1\", error: %2")
+                               .arg(name).arg(static_cast<qulonglong>(error)));
         }
     }
 
-    return false;
+    // Wait until the service reports that it is running. Starting a
+    // service is asynchronous; sending the IPC command too early would
+    // race with the service setting up its socket.
+    if (started) {
+        for (int attempt = 0; attempt < 100; ++attempt) {
+            SERVICE_STATUS status;
+            if (QueryServiceStatus(hService, &status)) {
+                if (status.dwCurrentState == SERVICE_RUNNING) {
+                    break;
+                }
+                if (status.dwCurrentState == SERVICE_STOPPED) {
+                    started = false;
+                    break;
+                }
+            }
+            Sleep(100);
+        }
+    }
+
+    CloseServiceHandle(hService);
+    CloseServiceHandle(hSCManager);
+    return started;
 }
 #else
 bool MainWindow::isServiceRunning()
