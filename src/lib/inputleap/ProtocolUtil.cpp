@@ -24,6 +24,7 @@
 
 #include <cctype>
 #include <cstring>
+#include <memory>
 #include <vector>
 
 namespace inputleap {
@@ -76,21 +77,23 @@ void ProtocolUtil::vwritef(inputleap::IStream* stream, const char* fmt, std::uin
         return;
     }
 
-    // fill buffer
-    std::uint8_t* buffer = new std::uint8_t[size];
+    // Input messages are tiny and are sent at a high rate, so avoid a heap
+    // allocation for the common case. Fall back to the heap for large
+    // messages such as clipboard data.
+    static constexpr std::uint32_t kStackBufferSize = 256;
+    std::uint8_t stack_buffer[kStackBufferSize];
+    std::unique_ptr<std::uint8_t[]> heap_buffer;
+    std::uint8_t* buffer = stack_buffer;
+    if (size > kStackBufferSize) {
+        heap_buffer = std::make_unique<std::uint8_t[]>(size);
+        buffer = heap_buffer.get();
+    }
+
     writef_void(buffer, fmt, args);
 
-    try {
-        // write buffer
-        stream->write(buffer, size);
-        LOG_DEBUG5("wrote %d bytes", size);
-
-        delete[] buffer;
-    }
-    catch (XBase&) {
-        delete[] buffer;
-        throw;
-    }
+    // write buffer
+    stream->write(buffer, size);
+    LOG_DEBUG5("wrote %d bytes", size);
 }
 
 void
