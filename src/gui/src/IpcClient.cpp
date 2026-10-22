@@ -27,7 +27,9 @@
 
 IpcClient::IpcClient() :
 m_ReaderStarted(false),
-m_Enabled(false)
+m_Enabled(false),
+m_PendingElevate(ElevateAsNeeded),
+m_HasPendingCommand(false)
 {
     m_Socket = new QTcpSocket(this);
     connect(m_Socket, &QTcpSocket::connected, this, &IpcClient::connected);
@@ -48,6 +50,7 @@ IpcClient::~IpcClient()
 void IpcClient::connected()
 {
     sendHello();
+    flushPendingCommand();
     Q_EMIT infoMessage("connection established");
 }
 
@@ -103,6 +106,30 @@ void IpcClient::sendHello()
 }
 
 void IpcClient::sendCommand(const QString& command, ElevateMode const elevate)
+{
+    // The service may not be running yet when the user presses Start.
+    // Remember the command and send it as soon as the IPC connection is
+    // established, instead of writing to an unconnected socket and losing
+    // the command.
+    m_PendingCommand = command;
+    m_PendingElevate = elevate;
+    m_HasPendingCommand = true;
+    flushPendingCommand();
+}
+
+void IpcClient::flushPendingCommand()
+{
+    if (!m_HasPendingCommand ||
+        m_Socket->state() != QAbstractSocket::ConnectedState) {
+        return;
+    }
+
+    writeCommand(m_PendingCommand, m_PendingElevate);
+    m_HasPendingCommand = false;
+    m_PendingCommand.clear();
+}
+
+void IpcClient::writeCommand(const QString& command, ElevateMode const elevate)
 {
     QDataStream stream(m_Socket);
 
