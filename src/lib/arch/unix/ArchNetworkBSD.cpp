@@ -389,6 +389,49 @@ ArchNetworkBSD::writeSocket(ArchSocket s, const void* buf, size_t len)
     return n;
 }
 
+size_t
+ArchNetworkBSD::recvFrom(ArchSocket s, void* buf, size_t len, ArchNetAddress* addr)
+{
+    assert(s != nullptr);
+
+    struct sockaddr_storage sa;
+    socklen_t saLen = sizeof(sa);
+    ssize_t n = recvfrom(s->m_fd, buf, len, 0,
+                         reinterpret_cast<struct sockaddr*>(&sa), &saLen);
+    if (n == -1) {
+        if (errno == EINTR || errno == EAGAIN) {
+            return 0;
+        }
+        throwError(errno);
+    }
+
+    if (addr != nullptr) {
+        auto* result = new ArchNetAddressImpl;
+        memcpy(&result->m_addr, &sa, saLen);
+        result->m_len = saLen;
+        *addr = result;
+    }
+
+    return static_cast<size_t>(n);
+}
+
+size_t
+ArchNetworkBSD::sendTo(ArchSocket s, const void* buf, size_t len, ArchNetAddress addr)
+{
+    assert(s != nullptr);
+    assert(addr != nullptr);
+
+    ssize_t n = sendto(s->m_fd, buf, len, 0,
+                       TYPED_ADDR(struct sockaddr, addr), addr->m_len);
+    if (n == -1) {
+        if (errno == EINTR || errno == EAGAIN) {
+            return 0;
+        }
+        throwError(errno);
+    }
+    return static_cast<size_t>(n);
+}
+
 void
 ArchNetworkBSD::throwErrorOnSocket(ArchSocket s)
 {
@@ -458,12 +501,16 @@ ArchNetworkBSD::setDSCPOnSocket(ArchSocket s, int dscp)
     // Best effort: IPv4 sockets accept IP_TOS, IPv6 sockets need
     // IPV6_TCLASS. Failures are ignored because marking is optional.
     int tos = (dscp & 0x3f) << 2;
+#ifdef IP_TOS
     if (setsockopt(s->m_fd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos)) == 0) {
         return;
     }
+#endif
 
+#ifdef IPV6_TCLASS
     int tclass = tos;
     setsockopt(s->m_fd, IPPROTO_IPV6, IPV6_TCLASS, &tclass, sizeof(tclass));
+#endif
 }
 
 bool

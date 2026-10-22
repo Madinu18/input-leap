@@ -52,6 +52,10 @@ public:
     */
     NetworkAddress(const std::string& hostname, int port);
 
+    //! Construct a wildcard address, allowing port 0 (ephemeral)
+    static NetworkAddress wildcard(int port,
+                                   IArchNetwork::EAddressFamily family = IArchNetwork::kINET);
+
     NetworkAddress(const NetworkAddress&);
 
     ~NetworkAddress();

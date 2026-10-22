@@ -36,6 +36,7 @@
 #include "net/TCPSocket.h"
 #include "net/IDataSocket.h"
 #include "net/IListenSocket.h"
+#include "net/FastPath.h"
 #include "net/XSocket.h"
 #include "mt/Thread.h"
 #include "arch/Arch.h"
@@ -183,6 +184,44 @@ Server::Server(
 		m_lockedToScreen = true;
 	}
 
+}
+
+bool Server::create_fast_path_session(std::uint32_t& session_id,
+                                      std::array<std::uint8_t, 16>& key)
+{
+    if (!m_args.m_enableUdp) {
+        return false;
+    }
+
+    if (m_fastPath == nullptr) {
+        m_fastPath = std::make_unique<FastPathServer>(m_args.m_udpPort);
+        if (!m_fastPath->is_valid()) {
+            m_fastPath.reset();
+            return false;
+        }
+        LOG_NOTE("UDP fast path listening on port %d", m_args.m_udpPort);
+    }
+
+    return m_fastPath->create_session(session_id, key);
+}
+
+void Server::remove_fast_path_session(std::uint32_t session_id)
+{
+    if (m_fastPath != nullptr) {
+        m_fastPath->remove_session(session_id);
+    }
+}
+
+bool Server::fast_path_active(std::uint32_t session_id) const
+{
+    return m_fastPath != nullptr && m_fastPath->is_active(session_id);
+}
+
+bool Server::send_fast_path_motion(std::uint32_t session_id, std::int32_t x,
+                                   std::int32_t y, bool relative)
+{
+    return m_fastPath != nullptr &&
+           m_fastPath->send_motion(session_id, x, y, relative);
 }
 
 Server::~Server()
@@ -1067,6 +1106,13 @@ Server::sendOptions(BaseClientProxy* client) const
 			optionsList.push_back(index->first);
             optionsList.push_back(static_cast<std::uint32_t>(index->second));
 		}
+	}
+
+	// advertise the encrypted UDP fast path. Clients that do not know
+	// this option ignore it; clients that do will request a session.
+	if (m_args.m_enableUdp) {
+		optionsList.push_back(kOptionFastPath);
+		optionsList.push_back(1);
 	}
 
 	// send the options

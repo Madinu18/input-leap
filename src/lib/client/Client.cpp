@@ -25,6 +25,7 @@
 #include "inputleap/PacketStreamFilter.h"
 #include "inputleap/ProtocolUtil.h"
 #include "inputleap/protocol_types.h"
+#include "inputleap/option_types.h"
 #include "inputleap/Exceptions.h"
 #include "inputleap/StreamChunker.h"
 #include "inputleap/IPlatformScreen.h"
@@ -33,6 +34,7 @@
 #include "net/IDataSocket.h"
 #include "net/ISocketFactory.h"
 #include "net/SecureSocket.h"
+#include "net/FastPath.h"
 #include "arch/Arch.h"
 #include "base/Log.h"
 #include "base/EventQueueTimer.h"
@@ -68,10 +70,12 @@ Client::Client(IEventQueue* events, const std::string& name, const NetworkAddres
     m_events(events),
     m_sendFileThread(nullptr),
     m_writeToDropDirThread(nullptr),
+    m_fastPath(nullptr),
     m_useSecureNetwork(args.m_enableCrypto),
     m_args(args),
     m_enableClipboard(true),
-    m_maximumClipboardSize(INT_MAX)
+    m_maximumClipboardSize(INT_MAX),
+    m_fastPathSupported(false)
 {
     assert(m_socketFactory != nullptr);
     assert(m_screen != nullptr);
@@ -81,6 +85,9 @@ Client::Client(IEventQueue* events, const std::string& name, const NetworkAddres
                           [this](const auto& e){ handle_suspend(); });
     m_events->add_handler(EventType::SCREEN_RESUME, get_event_target(),
                           [this](const auto& e){ handle_resume(); });
+
+    m_events->add_handler(EventType::CLIENT_FAST_PATH_MOTION, get_event_target(),
+                          [this](const auto& e){ handle_fast_path_motion(e); });
 
     if (m_args.m_enableDragDrop) {
         m_events->add_handler(EventType::FILE_CHUNK_SENDING, this,
@@ -98,6 +105,9 @@ Client::~Client()
 
     m_events->remove_handler(EventType::SCREEN_SUSPEND, get_event_target());
     m_events->remove_handler(EventType::SCREEN_RESUME, get_event_target());
+    m_events->remove_handler(EventType::CLIENT_FAST_PATH_MOTION, get_event_target());
+
+    stop_fast_path();
 
     cleanupTimer();
     cleanupScreen();
@@ -184,6 +194,16 @@ Client::handshakeComplete()
 {
     m_ready = true;
     m_screen->enable();
+
+    // Ask the server for an encrypted UDP fast path for mouse motion.
+    // The server advertises support through the FSTP option, so clients
+    // talking to older servers never send this message (an unknown
+    // message would make them disconnect).
+    if (m_args.m_enableUdp && m_fastPathSupported && m_stream != nullptr) {
+        ProtocolUtil::writef(m_stream, kMsgDFastPath,
+                             static_cast<std::uint8_t>(1));
+    }
+
     send_event(EventType::CLIENT_CONNECTED);
 }
 
@@ -318,6 +338,45 @@ void Client::mouseRelativeMove(std::int32_t dx, std::int32_t dy)
     m_screen->mouseRelativeMove(dx, dy);
 }
 
+void Client::start_fast_path(int port, std::uint32_t session,
+                             const std::array<std::uint8_t, 16>& key)
+{
+    stop_fast_path();
+
+    if (!m_args.m_enableUdp || port <= 0) {
+        return;
+    }
+
+    m_fastPath = std::make_unique<FastPathClient>(
+        m_events, get_event_target(), m_serverAddress, port, session, key);
+    if (!m_fastPath->is_valid()) {
+        m_fastPath.reset();
+    }
+    else {
+        LOG_DEBUG1("UDP fast path active on port %d", port);
+    }
+}
+
+void Client::stop_fast_path()
+{
+    m_fastPath.reset();
+}
+
+void Client::handle_fast_path_motion(const Event& event)
+{
+    if (!m_active) {
+        return;
+    }
+
+    const auto& info = event.get_data_as<FastPathMotionInfo>();
+    if (info.relative) {
+        m_screen->mouseRelativeMove(info.x, info.y);
+    }
+    else {
+        m_screen->mouseMove(info.x, info.y);
+    }
+}
+
 void Client::mouseWheel(std::int32_t xDelta, std::int32_t yDelta)
 {
     m_screen->mouseWheel(xDelta, yDelta);
@@ -338,6 +397,12 @@ Client::resetOptions()
 void
 Client::setOptions(const OptionsList& options)
 {
+    for (std::size_t i = 0; i + 1 < options.size(); i += 2) {
+        if (options[i] == kOptionFastPath && options[i + 1] != 0) {
+            m_fastPathSupported = true;
+        }
+    }
+
     for (auto index = options.begin(); index != options.end(); ++index) {
         const OptionID id       = *index;
         if (id == kOptionClipboardSharing) {
@@ -506,6 +571,9 @@ Client::cleanupConnecting()
 void
 Client::cleanupConnection()
 {
+    stop_fast_path();
+    m_fastPathSupported = false;
+
     if (m_stream != nullptr) {
         m_events->remove_handler(EventType::STREAM_INPUT_READY, m_stream->get_event_target());
         m_events->remove_handler(EventType::STREAM_OUTPUT_ERROR, m_stream->get_event_target());

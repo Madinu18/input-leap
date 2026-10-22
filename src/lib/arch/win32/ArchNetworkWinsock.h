@@ -83,6 +83,8 @@ public:
     virtual size_t readSocket(ArchSocket s, void* buf, size_t len);
     virtual size_t writeSocket(ArchSocket s,
                             const void* buf, size_t len);
+    virtual size_t recvFrom(ArchSocket s, void* buf, size_t len, ArchNetAddress* addr);
+    virtual size_t sendTo(ArchSocket s, const void* buf, size_t len, ArchNetAddress addr);
     virtual void throwErrorOnSocket(ArchSocket);
     virtual bool setNoDelayOnSocket(ArchSocket, bool noDelay);
     virtual void setDSCPOnSocket(ArchSocket, int dscp);

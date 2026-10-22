@@ -33,7 +33,10 @@
 #include "base/Stopwatch.h"
 #include "base/EventTypes.h"
 
+#include <array>
+#include <cstdint>
 #include <map>
+#include <memory>
 #include <set>
 #include <vector>
 
@@ -44,6 +47,7 @@ class PrimaryClient;
 class InputFilter;
 class Thread;
 class ClientListener;
+class FastPathServer;
 
 /// This class implements the top-level server algorithms for InputLeap.
 class Server : public INode, public EventTarget {
@@ -193,6 +197,14 @@ public:
 
     //! UDP port used by the fast path
     int udp_port() const { return m_args.m_udpPort; }
+
+    //! Create an encrypted UDP session for a client (false if unavailable)
+    bool create_fast_path_session(std::uint32_t& session_id,
+                                  std::array<std::uint8_t, 16>& key);
+    void remove_fast_path_session(std::uint32_t session_id);
+    bool fast_path_active(std::uint32_t session_id) const;
+    bool send_fast_path_motion(std::uint32_t session_id, std::int32_t x,
+                               std::int32_t y, bool relative);
 
     //@}
 
@@ -492,6 +504,7 @@ private:
 
     ClientListener* m_clientListener;
     ServerArgs m_args;
+    std::unique_ptr<FastPathServer> m_fastPath;
 };
 
 } // namespace inputleap

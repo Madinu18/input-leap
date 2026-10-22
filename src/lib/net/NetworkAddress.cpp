@@ -86,6 +86,15 @@ NetworkAddress::NetworkAddress(int port) :
     ARCH->setAddrPort(m_address, m_port);
 }
 
+NetworkAddress NetworkAddress::wildcard(int port, IArchNetwork::EAddressFamily family)
+{
+    NetworkAddress addr;
+    addr.m_port = port;
+    addr.m_address = ARCH->newAnyAddr(family);
+    ARCH->setAddrPort(addr.m_address, port);
+    return addr;
+}
+
 NetworkAddress::NetworkAddress(const NetworkAddress& addr) :
     m_address(addr.m_address != nullptr ? ARCH->copyAddr(addr.m_address) : nullptr),
     m_hostname(addr.m_hostname),

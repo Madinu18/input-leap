@@ -31,6 +31,7 @@
 #include "base/EventQueueTimer.h"
 #include "base/Time.h"
 
+#include <array>
 #include <cstring>
 
 namespace inputleap {
@@ -51,7 +52,8 @@ ClientProxy1_6::ClientProxy1_6(const std::string& name,
     m_pendingMotionRelative(false),
     m_pendingX(0),
     m_pendingY(0),
-    m_motionTimer(nullptr)
+    m_motionTimer(nullptr),
+    m_fastPathSession(0)
 {
     m_motionRate = m_server->motion_rate();
     // install event handlers
@@ -98,6 +100,11 @@ void ClientProxy1_6::disconnect()
 
 void ClientProxy1_6::remove_handlers()
 {
+    if (m_fastPathSession != 0) {
+        m_server->remove_fast_path_session(m_fastPathSession);
+        m_fastPathSession = 0;
+    }
+
     // uninstall event handlers
     m_events->remove_handler(EventType::STREAM_INPUT_READY, get_conn().get_event_target());
     m_events->remove_handler(EventType::STREAM_OUTPUT_ERROR, get_conn().get_event_target());
@@ -175,6 +182,12 @@ bool ClientProxy1_6::motion_budget_available() const
 
 void ClientProxy1_6::send_motion_now(std::int32_t x, std::int32_t y, bool relative)
 {
+    if (m_fastPathSession != 0 &&
+        m_server->send_fast_path_motion(m_fastPathSession, x, y, relative)) {
+        m_lastMotionSendTime = current_time_seconds();
+        return;
+    }
+
     if (relative) {
         get_conn().send_mouse_relative_move_1_6(x, y);
     }
@@ -315,6 +328,9 @@ bool ClientProxy1_6::parseMessage(const std::uint8_t* code)
     }
     else if (memcmp(code, kMsgDClipboard, 4) == 0) {
         return recvClipboard();
+    }
+    else if (memcmp(code, kMsgDFastPath, 4) == 0) {
+        return recv_fast_path_request();
     }
     return false;
 }
@@ -637,6 +653,38 @@ bool ClientProxy1_6::recvGrabClipboard()
     m_events->add_event(EventType::CLIPBOARD_GRABBED, get_event_target(),
                         create_event_data<ClipboardInfo>(info));
 
+    return true;
+}
+
+bool ClientProxy1_6::recv_fast_path_request()
+{
+    std::uint8_t version = 0;
+    if (!ProtocolUtil::readf(getStream(), kMsgDFastPath + 4, &version)) {
+        return false;
+    }
+
+    if (version != 1 || !m_server->udp_enabled()) {
+        return true;
+    }
+
+    std::uint32_t session_id = 0;
+    std::array<std::uint8_t, 16> key{};
+    if (!m_server->create_fast_path_session(session_id, key)) {
+        return true;
+    }
+
+    if (m_fastPathSession != 0) {
+        m_server->remove_fast_path_session(m_fastPathSession);
+    }
+    m_fastPathSession = session_id;
+
+    std::string key_string(reinterpret_cast<const char*>(key.data()), key.size());
+    ProtocolUtil::writef(getStream(), kMsgCFastPath,
+                         static_cast<std::uint8_t>(1),
+                         static_cast<std::uint16_t>(m_server->udp_port()),
+                         session_id, &key_string);
+    LOG_DEBUG1("negotiated UDP fast path session %u on port %d",
+               session_id, m_server->udp_port());
     return true;
 }
 

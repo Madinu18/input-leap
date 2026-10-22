@@ -217,6 +217,19 @@ public:
     virtual size_t writeSocket(ArchSocket s,
                             const void* buf, size_t len) = 0;
 
+    //! Receive a datagram and the sender address
+    /*!
+    Reads one datagram from an unconnected datagram socket. On success
+    \p addr receives a newly allocated address that the caller must
+    release with closeAddr(). Returns 0 if no datagram is available.
+    */
+    virtual size_t recvFrom(ArchSocket s, void* buf, size_t len,
+                            ArchNetAddress* addr) = 0;
+
+    //! Send a datagram to an address
+    virtual size_t sendTo(ArchSocket s, const void* buf, size_t len,
+                          ArchNetAddress addr) = 0;
+
     //! Check error on socket
     /*!
     If the socket \c s is in an error state then throws an appropriate

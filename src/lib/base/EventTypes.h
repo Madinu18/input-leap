@@ -283,6 +283,9 @@ enum class EventType : std::uint32_t {
     /// This event is a keepalive event.
     FILE_KEEPALIVE,
 
+    /// Mouse motion received over the UDP fast path.
+    CLIENT_FAST_PATH_MOTION,
+
     /// The total number of known event types.
     EVENT_COUNT,
 };

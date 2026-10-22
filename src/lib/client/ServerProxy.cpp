@@ -33,6 +33,8 @@
 #include "base/EventQueueTimer.h"
 #include "base/XBase.h"
 
+#include <array>
+#include <cstring>
 #include <memory>
 
 namespace inputleap {
@@ -234,6 +236,10 @@ ServerProxy::EResult ServerProxy::parseMessage(const std::uint8_t* code)
 
     else if (memcmp(code, kMsgDMouseWheel, 4) == 0) {
         mouseWheel();
+    }
+
+    else if (memcmp(code, kMsgCFastPath, 4) == 0) {
+        fastPath();
     }
 
     else if (memcmp(code, kMsgDKeyDown, 4) == 0) {
@@ -781,6 +787,29 @@ ServerProxy::mouseWheel()
 
     // forward
     m_client->mouseWheel(xDelta, yDelta);
+}
+
+void
+ServerProxy::fastPath()
+{
+    std::uint8_t version = 0;
+    std::uint16_t port = 0;
+    std::uint32_t session = 0;
+    std::string key;
+
+    if (!ProtocolUtil::readf(m_stream, kMsgCFastPath + 4,
+                             &version, &port, &session, &key)) {
+        return;
+    }
+
+    if (version != 1 || key.size() != 16) {
+        LOG_WARN("ignoring invalid UDP fast path parameters");
+        return;
+    }
+
+    std::array<std::uint8_t, 16> key_array;
+    std::memcpy(key_array.data(), key.data(), key.size());
+    m_client->start_fast_path(port, session, key_array);
 }
 
 void

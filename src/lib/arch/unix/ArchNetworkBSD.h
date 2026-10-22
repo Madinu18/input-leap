@@ -75,6 +75,8 @@ public:
     void unblockPollSocket(ArchThread thread) override;
     size_t readSocket(ArchSocket s, void* buf, size_t len) override;
     size_t writeSocket(ArchSocket s, const void* buf, size_t len) override;
+    size_t recvFrom(ArchSocket s, void* buf, size_t len, ArchNetAddress* addr) override;
+    size_t sendTo(ArchSocket s, const void* buf, size_t len, ArchNetAddress addr) override;
     void throwErrorOnSocket(ArchSocket) override;
     bool setNoDelayOnSocket(ArchSocket, bool noDelay) override;
     void setDSCPOnSocket(ArchSocket, int dscp) override;

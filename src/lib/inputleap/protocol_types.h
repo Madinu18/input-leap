@@ -238,6 +238,15 @@ extern const char*        kMsgDMouseRelMove;
 // the user) or left.
 extern const char*        kMsgDMouseWheel;
 
+// fast path request:  secondary -> primary
+// $1 = fast path protocol version (1)
+extern const char*        kMsgDFastPath;
+
+// fast path parameters:  primary -> secondary
+// $1 = fast path protocol version, $2 = UDP port, $3 = session id,
+// $4 = 16-byte session key
+extern const char*        kMsgCFastPath;
+
 // mouse vertical scroll:  primary -> secondary
 // like as kMsgDMouseWheel except only sends $1 = yDelta.
 extern const char*        kMsgDMouseWheel1_0;

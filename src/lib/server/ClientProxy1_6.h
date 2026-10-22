@@ -93,6 +93,7 @@ private:
 
     bool recvInfo();
     bool recvGrabClipboard();
+    bool recv_fast_path_request();
 
     // Mouse motion coalescing. Motion is sent at most m_motionRate times
     // per second. Intermediate absolute positions are discarded (latest
@@ -135,6 +136,9 @@ protected:
     std::int32_t m_pendingX;
     std::int32_t m_pendingY;
     EventQueueTimer* m_motionTimer;
+
+    // Session id for the encrypted UDP fast path (0 when not negotiated).
+    std::uint32_t m_fastPathSession;
 };
 
 } // namespace inputleap

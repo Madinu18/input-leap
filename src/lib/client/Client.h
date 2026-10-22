@@ -30,14 +30,20 @@
 #include "net/NetworkAddress.h"
 #include "base/EventTypes.h"
 
+#include <array>
+#include <cstdint>
+#include <memory>
+
 namespace inputleap {
 
 class ServerProxy;
 class IStream;
 class Thread;
+class FastPathClient;
 
 /// This class implements the top-level client algorithms for InputLeap.
 class Client : public IClient, public INode, public EventTarget {
+    friend class ServerProxy;
 public:
     class FailInfo {
     public:
@@ -186,6 +192,10 @@ private:
     void handle_stop_retry();
     void onFileReceiveCompleted();
     void sendClipboardThread(void*);
+    void start_fast_path(int port, std::uint32_t session,
+                         const std::array<std::uint8_t, 16>& key);
+    void stop_fast_path();
+    void handle_fast_path_motion(const Event&);
 
 public:
     bool m_mock;
@@ -213,10 +223,12 @@ private:
     std::string m_dragFileExt;
     Thread* m_sendFileThread;
     Thread* m_writeToDropDirThread;
+    std::unique_ptr<FastPathClient> m_fastPath;
     bool m_useSecureNetwork;
     ClientArgs m_args;
     bool m_enableClipboard;
     size_t m_maximumClipboardSize;
+    bool m_fastPathSupported;
 };
 
 } // namespace inputleap

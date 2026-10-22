@@ -51,8 +51,10 @@ static int (PASCAL FAR *ioctl_winsock)(SOCKET s, int cmd, void FAR * data);
 static int (PASCAL FAR *listen_winsock)(SOCKET s, int backlog);
 static u_short (PASCAL FAR *ntohs_winsock)(u_short v);
 static int (PASCAL FAR *recv_winsock)(SOCKET s, void FAR * buf, int len, int flags);
+static int (PASCAL FAR *recvfrom_winsock)(SOCKET s, void FAR * buf, int len, int flags, struct sockaddr FAR * from, int FAR * fromlen);
 static int (PASCAL FAR *select_winsock)(int nfds, fd_set FAR *readfds, fd_set FAR *writefds, fd_set FAR *exceptfds, const struct timeval FAR *timeout);
 static int (PASCAL FAR *send_winsock)(SOCKET s, const void FAR * buf, int len, int flags);
+static int (PASCAL FAR *sendto_winsock)(SOCKET s, const void FAR * buf, int len, int flags, const struct sockaddr FAR * to, int tolen);
 static int (PASCAL FAR *setsockopt_winsock)(SOCKET s, int level, int optname, const void FAR * optval, int optlen);
 static int (PASCAL FAR *shutdown_winsock)(SOCKET s, int how);
 static SOCKET (PASCAL FAR *socket_winsock)(int af, int type, int protocol);
@@ -178,8 +180,10 @@ ArchNetworkWinsock::initModule(HMODULE module)
     setfunc(listen_winsock, listen, int (PASCAL FAR *)(SOCKET s, int backlog));
     setfunc(ntohs_winsock, ntohs, u_short (PASCAL FAR *)(u_short v));
     setfunc(recv_winsock, recv, int (PASCAL FAR *)(SOCKET s, void FAR * buf, int len, int flags));
+    setfunc(recvfrom_winsock, recvfrom, int (PASCAL FAR *)(SOCKET s, void FAR * buf, int len, int flags, struct sockaddr FAR * from, int FAR * fromlen));
     setfunc(select_winsock, select, int (PASCAL FAR *)(int nfds, fd_set FAR *readfds, fd_set FAR *writefds, fd_set FAR *exceptfds, const struct timeval FAR *timeout));
     setfunc(send_winsock, send, int (PASCAL FAR *)(SOCKET s, const void FAR * buf, int len, int flags));
+    setfunc(sendto_winsock, sendto, int (PASCAL FAR *)(SOCKET s, const void FAR * buf, int len, int flags, const struct sockaddr FAR * to, int tolen));
     setfunc(setsockopt_winsock, setsockopt, int (PASCAL FAR *)(SOCKET s, int level, int optname, const void FAR * optval, int optlen));
     setfunc(shutdown_winsock, shutdown, int (PASCAL FAR *)(SOCKET s, int how));
     setfunc(socket_winsock, socket, SOCKET (PASCAL FAR *)(int af, int type, int protocol));
@@ -582,6 +586,51 @@ ArchNetworkWinsock::writeSocket(ArchSocket s, const void* buf, size_t len)
     return static_cast<size_t>(n);
 }
 
+size_t
+ArchNetworkWinsock::recvFrom(ArchSocket s, void* buf, size_t len, ArchNetAddress* addr)
+{
+    assert(s != nullptr);
+
+    struct sockaddr_storage sa;
+    int saLen = sizeof(sa);
+    int n = recvfrom_winsock(s->m_socket, buf, (int)len, 0,
+                             reinterpret_cast<struct sockaddr*>(&sa), &saLen);
+    if (n == SOCKET_ERROR) {
+        int err = getsockerror_winsock();
+        if (err == WSAEINTR || err == WSAEWOULDBLOCK) {
+            return 0;
+        }
+        throwError(err);
+    }
+
+    if (addr != nullptr) {
+        ArchNetAddress result = ArchNetAddressImpl::alloc(sizeof(sa));
+        memcpy(TYPED_ADDR(void, result), &sa, saLen);
+        result->m_len = saLen;
+        *addr = result;
+    }
+
+    return static_cast<size_t>(n);
+}
+
+size_t
+ArchNetworkWinsock::sendTo(ArchSocket s, const void* buf, size_t len, ArchNetAddress addr)
+{
+    assert(s != nullptr);
+    assert(addr != nullptr);
+
+    int n = sendto_winsock(s->m_socket, buf, (int)len, 0,
+                           TYPED_ADDR(struct sockaddr, addr), addr->m_len);
+    if (n == SOCKET_ERROR) {
+        int err = getsockerror_winsock();
+        if (err == WSAEINTR || err == WSAEWOULDBLOCK) {
+            return 0;
+        }
+        throwError(err);
+    }
+    return static_cast<size_t>(n);
+}
+
 void
 ArchNetworkWinsock::throwErrorOnSocket(ArchSocket s)
 {
@@ -644,14 +693,18 @@ ArchNetworkWinsock::setDSCPOnSocket(ArchSocket s, int dscp)
     // Best effort: IPv4 sockets accept IP_TOS, IPv6 sockets need
     // IPV6_TCLASS. Failures are ignored because marking is optional.
     int tos = (dscp & 0x3f) << 2;
+#ifdef IP_TOS
     if (setsockopt_winsock(s->m_socket, IPPROTO_IP, IP_TOS,
                            reinterpret_cast<const char*>(&tos), sizeof(tos)) == 0) {
         return;
     }
+#endif
 
+#ifdef IPV6_TCLASS
     int tclass = tos;
     setsockopt_winsock(s->m_socket, IPPROTO_IPV6, IPV6_TCLASS,
                        reinterpret_cast<const char*>(&tclass), sizeof(tclass));
+#endif
 }
 
 bool
