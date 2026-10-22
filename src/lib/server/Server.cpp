@@ -506,6 +506,15 @@ void Server::switchScreen(BaseClientProxy* dst, std::int32_t x, std::int32_t y, 
 				if (m_clipboards[id].m_clipboard.marshall().size() > m_maximumClipboardSize) {
 					continue;
 				}
+				// The new screen may believe its cached clipboard is
+				// authoritative (dirty == false) even though another
+				// screen owns the current clipboard. Mark it dirty so
+				// setClipboard() actually transfers the data. Do not
+				// overwrite the owner's own clipboard with a possibly
+				// older server copy.
+				if (m_clipboards[id].m_clipboardOwner != getName(m_active)) {
+					m_active->setClipboardDirty(id, true);
+				}
 				m_active->setClipboard(id, &m_clipboards[id].m_clipboard);
 			}
 		}
