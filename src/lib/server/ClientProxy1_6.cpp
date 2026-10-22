@@ -29,6 +29,7 @@
 #include "base/Log.h"
 #include "base/IEventQueue.h"
 #include "base/EventQueueTimer.h"
+#include "base/Time.h"
 
 #include <cstring>
 
@@ -43,8 +44,16 @@ ClientProxy1_6::ClientProxy1_6(const std::string& name,
     m_events(events),
     m_keepAliveRate(kKeepAliveRate),
     m_keepAliveTimer(nullptr),
-    m_server{server}
+    m_server{server},
+    m_motionRate(250.0),
+    m_lastMotionSendTime(0.0),
+    m_hasPendingMotion(false),
+    m_pendingMotionRelative(false),
+    m_pendingX(0),
+    m_pendingY(0),
+    m_motionTimer(nullptr)
 {
+    m_motionRate = m_server->motion_rate();
     // install event handlers
     m_events->add_handler(EventType::STREAM_INPUT_READY, get_conn().get_event_target(),
                           [this](const auto& e){ handle_data(); });
@@ -99,6 +108,14 @@ void ClientProxy1_6::remove_handlers()
     m_events->remove_handler(EventType::CLIPBOARD_SENDING, this);
     m_events->remove_handler(EventType::TIMER, this);
 
+    // remove pending mouse motion timer
+    if (m_motionTimer != nullptr) {
+        m_events->remove_handler(EventType::TIMER, m_motionTimer);
+        m_events->deleteTimer(m_motionTimer);
+        m_motionTimer = nullptr;
+    }
+    m_hasPendingMotion = false;
+
     // remove timer
     removeHeartbeatTimer();
 }
@@ -146,6 +163,62 @@ void ClientProxy1_6::resetHeartbeatTimer()
 void ClientProxy1_6::resetHeartbeatRate()
 {
     setHeartbeatRate(kKeepAliveRate, kKeepAliveRate * kKeepAlivesUntilDeath);
+}
+
+bool ClientProxy1_6::motion_budget_available() const
+{
+    if (m_motionRate <= 0.0) {
+        return true;
+    }
+    return (current_time_seconds() - m_lastMotionSendTime) >= (1.0 / m_motionRate);
+}
+
+void ClientProxy1_6::send_motion_now(std::int32_t x, std::int32_t y, bool relative)
+{
+    if (relative) {
+        get_conn().send_mouse_relative_move_1_6(x, y);
+    }
+    else {
+        get_conn().send_mouse_move_1_6(x, y);
+    }
+    m_lastMotionSendTime = current_time_seconds();
+}
+
+void ClientProxy1_6::schedule_motion_flush()
+{
+    if (m_motionTimer != nullptr) {
+        return;
+    }
+
+    double delay = (1.0 / m_motionRate) - (current_time_seconds() - m_lastMotionSendTime);
+    if (delay < 0.001) {
+        delay = 0.001;
+    }
+
+    m_motionTimer = m_events->newOneShotTimer(delay, nullptr);
+    m_events->add_handler(EventType::TIMER, m_motionTimer,
+                          [this](const auto&){ flush_pending_motion(); });
+}
+
+void ClientProxy1_6::flush_pending_motion()
+{
+    if (m_motionTimer != nullptr) {
+        m_events->remove_handler(EventType::TIMER, m_motionTimer);
+        m_events->deleteTimer(m_motionTimer);
+        m_motionTimer = nullptr;
+    }
+
+    if (!m_hasPendingMotion) {
+        return;
+    }
+
+    const std::int32_t x = m_pendingX;
+    const std::int32_t y = m_pendingY;
+    const bool relative = m_pendingMotionRelative;
+    m_hasPendingMotion = false;
+    m_pendingX = 0;
+    m_pendingY = 0;
+    send_motion_now(x, y, relative);
 }
 
 void ClientProxy1_6::setHeartbeatRate(double rate, double alarm)
@@ -295,11 +368,13 @@ void ClientProxy1_6::getCursorPos(std::int32_t& x, std::int32_t& y) const
 void ClientProxy1_6::enter(std::int32_t xAbs, std::int32_t yAbs, std::uint32_t seqNum,
                            KeyModifierMask mask, bool)
 {
+    flush_pending_motion();
     get_conn().send_enter_1_6(xAbs, yAbs, seqNum, mask);
 }
 
 bool ClientProxy1_6::leave()
 {
+    flush_pending_motion();
     get_conn().send_leave_1_6();
     // we can never prevent the user from leaving
     return true;
@@ -307,6 +382,8 @@ bool ClientProxy1_6::leave()
 
 void ClientProxy1_6::setClipboard(ClipboardID id, const IClipboard* clipboard)
 {
+    flush_pending_motion();
+
     // ignore if this clipboard is already clean
     if (m_clipboard[id].m_dirty) {
         // this clipboard is now clean
@@ -324,6 +401,7 @@ void ClientProxy1_6::setClipboard(ClipboardID id, const IClipboard* clipboard)
 
 void ClientProxy1_6::grabClipboard(ClipboardID id)
 {
+    flush_pending_motion();
     get_conn().send_grab_clipboard(id);
 
     // this clipboard is now dirty
@@ -337,63 +415,118 @@ void ClientProxy1_6::setClipboardDirty(ClipboardID id, bool dirty)
 
 void ClientProxy1_6::keyDown(KeyID key, KeyModifierMask mask, KeyButton button)
 {
+    flush_pending_motion();
     get_conn().send_key_down_1_6(key, mask, button);
 }
 
 void ClientProxy1_6::keyRepeat(KeyID key, KeyModifierMask mask, std::int32_t count,
                                KeyButton button)
 {
+    flush_pending_motion();
     get_conn().send_key_repeat_1_6(key, mask, count, button);
 }
 
 void ClientProxy1_6::keyUp(KeyID key, KeyModifierMask mask, KeyButton button)
 {
+    flush_pending_motion();
     get_conn().send_key_up_1_6(key, mask, button);
 }
 
 void ClientProxy1_6::mouseDown(ButtonID button)
 {
+    flush_pending_motion();
     get_conn().send_mouse_down_1_6(button);
 }
 
 void ClientProxy1_6::mouseUp(ButtonID button)
 {
+    flush_pending_motion();
     get_conn().send_mouse_up_1_6(button);
 }
 
 void ClientProxy1_6::mouseMove(std::int32_t xAbs, std::int32_t yAbs)
 {
-    get_conn().send_mouse_move_1_6(xAbs, yAbs);
+    if (m_motionRate <= 0.0) {
+        send_motion_now(xAbs, yAbs, false);
+        return;
+    }
+
+    // Absolute and relative motion cannot be mixed in one pending packet.
+    if (m_hasPendingMotion && m_pendingMotionRelative) {
+        flush_pending_motion();
+    }
+
+    if (!m_hasPendingMotion && motion_budget_available()) {
+        send_motion_now(xAbs, yAbs, false);
+        return;
+    }
+
+    // Keep only the latest absolute position. Intermediate positions are
+    // useless once a newer one is available.
+    m_hasPendingMotion = true;
+    m_pendingMotionRelative = false;
+    m_pendingX = xAbs;
+    m_pendingY = yAbs;
+    schedule_motion_flush();
 }
 
 void ClientProxy1_6::mouseRelativeMove(std::int32_t xRel, std::int32_t yRel)
 {
-    get_conn().send_mouse_relative_move_1_6(xRel, yRel);
+    if (m_motionRate <= 0.0) {
+        send_motion_now(xRel, yRel, true);
+        return;
+    }
+
+    if (m_hasPendingMotion && !m_pendingMotionRelative) {
+        flush_pending_motion();
+    }
+
+    if (!m_hasPendingMotion && motion_budget_available()) {
+        send_motion_now(xRel, yRel, true);
+        return;
+    }
+
+    // Relative deltas must be accumulated, not replaced, otherwise motion
+    // is lost.
+    if (!m_hasPendingMotion) {
+        m_pendingX = 0;
+        m_pendingY = 0;
+    }
+    m_hasPendingMotion = true;
+    m_pendingMotionRelative = true;
+    m_pendingX += xRel;
+    m_pendingY += yRel;
+    schedule_motion_flush();
 }
 
 void ClientProxy1_6::mouseWheel(std::int32_t xDelta, std::int32_t yDelta)
 {
+    flush_pending_motion();
     get_conn().send_mouse_wheel_1_6(xDelta, yDelta);
 }
 
 void ClientProxy1_6::sendDragInfo(std::uint32_t fileCount, const char* info, size_t size)
 {
+    flush_pending_motion();
     std::string data(info, size);
     get_conn().send_drag_info_1_6(fileCount, data);
 }
 
 void ClientProxy1_6::file_chunk_sending(const FileChunk& chunk)
 {
+    flush_pending_motion();
     get_conn().send_file_chunk_1_6(chunk);
 }
 
 void ClientProxy1_6::screensaver(bool on)
 {
+    flush_pending_motion();
     get_conn().send_screensaver_1_6(on);
 }
 
 void ClientProxy1_6::resetOptions()
 {
+    flush_pending_motion();
     get_conn().send_reset_options_1_6();
     // reset heart rate and death
     resetHeartbeatRate();
@@ -403,6 +536,7 @@ void ClientProxy1_6::resetOptions()
 
 void ClientProxy1_6::setOptions(const OptionsList& options)
 {
+    flush_pending_motion();
     get_conn().send_set_options_1_6(options);
 
     // check options

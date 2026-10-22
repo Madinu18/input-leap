@@ -26,6 +26,8 @@
 #include "base/String.h"
 #include "io/filesystem.h"
 
+#include <cstdlib>
+
 #ifdef WINAPI_MSWINDOWS
 #include <VersionHelpers.h>
 #endif
@@ -438,6 +440,21 @@ ArgParser::parseGenericArgs(Argv& argv)
     }
     else if (argv.shift("--disable-crypto")) {
         argsBase().m_enableCrypto = false;
+    }
+    else if (argv.shift("--motion-rate", nullptr, &optarg)) {
+        argsBase().m_motionRate = std::atof(optarg);
+        if (argsBase().m_motionRate < 0.0) {
+            argsBase().m_motionRate = 0.0;
+        }
+    }
+    else if (argv.shift("--no-udp")) {
+        argsBase().m_enableUdp = false;
+    }
+    else if (argv.shift("--udp-port", nullptr, &optarg)) {
+        argsBase().m_udpPort = std::atoi(optarg);
+        if (argsBase().m_udpPort <= 0 || argsBase().m_udpPort > 65535) {
+            throw XArgvParserError("invalid UDP port: %s", optarg);
+        }
     }
     else if (argv.shift("--profile-dir", nullptr, &optarg)) {
         argsBase().m_profileDirectory = inputleap::fs::u8path(optarg);

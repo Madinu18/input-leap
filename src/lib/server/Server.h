@@ -185,6 +185,15 @@ public:
     //! Return fake drag file list
     DragFileList getFakeDragFileList() { return m_fakeDragFileList; }
 
+    //! Maximum mouse motion forwarding rate in Hz (0 = unlimited)
+    double motion_rate() const { return m_args.m_motionRate; }
+
+    //! Whether the encrypted UDP fast path may be used
+    bool udp_enabled() const { return m_args.m_enableUdp; }
+
+    //! UDP port used by the fast path
+    int udp_port() const { return m_args.m_udpPort; }
+
     //@}
 
 private:

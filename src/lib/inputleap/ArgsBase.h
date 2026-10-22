@@ -49,6 +49,14 @@ public:
     bool m_shouldExit;
     std::string network_address;
     bool m_enableCrypto;
+    // Maximum rate (Hz) at which mouse motion is forwarded to clients.
+    // 0 disables rate limiting. The default keeps WiFi airtime low while
+    // adding at most 4 ms of latency during continuous motion.
+    double m_motionRate;
+    // Use an encrypted UDP fast path for mouse motion when both sides
+    // support it. TCP remains the control and fallback channel.
+    bool m_enableUdp;
+    int m_udpPort;
     inputleap::fs::path m_profileDirectory;
     inputleap::fs::path m_pluginDirectory;
     bool use_x11 = false;

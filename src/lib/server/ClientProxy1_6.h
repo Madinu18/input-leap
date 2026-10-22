@@ -94,6 +94,14 @@ private:
     bool recvInfo();
     bool recvGrabClipboard();
 
+    // Mouse motion coalescing. Motion is sent at most m_motionRate times
+    // per second. Intermediate absolute positions are discarded (latest
+    // wins); relative deltas are accumulated.
+    void send_motion_now(std::int32_t x, std::int32_t y, bool relative);
+    void flush_pending_motion();
+    void schedule_motion_flush();
+    bool motion_budget_available() const;
+
 protected:
     struct ClientClipboard {
     public:
@@ -119,6 +127,14 @@ protected:
     double m_keepAliveRate;
     EventQueueTimer* m_keepAliveTimer;
     Server* m_server;
+
+    double m_motionRate;
+    double m_lastMotionSendTime;
+    bool m_hasPendingMotion;
+    bool m_pendingMotionRelative;
+    std::int32_t m_pendingX;
+    std::int32_t m_pendingY;
+    EventQueueTimer* m_motionTimer;
 };
 
 } // namespace inputleap
