@@ -76,7 +76,7 @@ Client::Client(IEventQueue* events, const std::string& name, const NetworkAddres
     m_enableClipboard(true),
     m_maximumClipboardSize(INT_MAX),
     m_fastPathSupported(false),
-    m_fastPathLastMotion(0.0)
+    m_fastPathLastMotion(-1000.0)
 {
     assert(m_socketFactory != nullptr);
     assert(m_screen != nullptr);
@@ -372,7 +372,7 @@ void Client::start_fast_path(int port, std::uint32_t session,
 void Client::stop_fast_path()
 {
     m_fastPath.reset();
-    m_fastPathLastMotion = 0.0;
+    m_fastPathLastMotion = -1000.0;
 }
 
 void Client::handle_fast_path_motion(const Event& event)

@@ -65,7 +65,14 @@ position.
 
 The fast path is negotiated through the `FSTP` option during the
 handshake. Older clients and older servers never see the new messages
-and keep using TCP.
+and keep using TCP. Clients that do not implement the option (including
+third-party Android clients) continue to use TCP and still benefit from
+motion coalescing and single-write framing.
+
+Allow UDP port 24801 (or the port selected with `--udp-port`) through
+the server's firewall. The client only needs to send outbound datagrams
+first, so stateful firewalls on the client side normally allow the
+replies.
 
 ## Options
 
