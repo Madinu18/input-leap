@@ -57,6 +57,10 @@ public:
     // support it. TCP remains the control and fallback channel.
     bool m_enableUdp;
     int m_udpPort;
+    // Legacy behaviour: treat the Scroll Lock toggle as "lock cursor to
+    // screen". Off by default because a stray Scroll Lock state otherwise
+    // prevents screen switching.
+    bool m_scrollLockLocksCursor;
     inputleap::fs::path m_profileDirectory;
     inputleap::fs::path m_pluginDirectory;
     bool use_x11 = false;

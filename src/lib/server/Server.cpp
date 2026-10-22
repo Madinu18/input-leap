@@ -178,10 +178,17 @@ Server::Server(
 	m_primaryClient->enable();
     input_filter_.setPrimaryClient(m_primaryClient);
 
-	// Determine if scroll lock is already set. If so, lock the cursor to the primary screen
+	// Legacy: lock the cursor to the primary screen if Scroll Lock is
+	// already on. This is opt-in because a Scroll Lock state set by
+	// another application must not silently disable screen switching.
 	if (m_primaryClient->getToggleMask() & KeyModifierScrollLock) {
-		LOG_NOTE("Scroll Lock is on, locking cursor to screen");
-		m_lockedToScreen = true;
+		if (m_args.m_scrollLockLocksCursor) {
+			LOG_NOTE("Scroll Lock is on, locking cursor to screen");
+			m_lockedToScreen = true;
+		}
+		else {
+			LOG_NOTE("Scroll Lock is on but legacy cursor locking is disabled");
+		}
 	}
 
 }
@@ -279,14 +286,11 @@ Server::setConfig(const Config& config)
 	// cut over
 	processOptions();
 
-	// add ScrollLock as a hotkey to lock to the screen.  this was a
-	// built-in feature in earlier releases and is now supported via
-	// the user configurable hotkey mechanism.  if the user has already
-	// registered ScrollLock for something else then that will win but
-	// we will unfortunately generate a warning.  if the user has
-	// configured a LockCursorToScreenAction then we don't add
-	// ScrollLock as a hotkey.
-	if (!m_config->hasLockToScreenAction()) {
+	// Add ScrollLock as a hotkey to lock to the screen only when the
+	// legacy behaviour was explicitly requested. A stray Scroll Lock
+	// state (for example set by another application) would otherwise
+	// prevent the cursor from leaving the primary screen.
+	if (m_args.m_scrollLockLocksCursor && !m_config->hasLockToScreenAction()) {
         IPlatformScreen::KeyInfo key{kKeyScrollLock, 0, 0, 0};
         InputFilter::Rule rule(new InputFilter::KeystrokeCondition(key));
         rule.adoptAction(new InputFilter::LockCursorToScreenAction(), true);

@@ -361,3 +361,19 @@ TEST(GenericArgsParsingTests, parseGenericArgs_udpPortCmd_setUdpPort)
     EXPECT_EQ(25000, argsBase.m_udpPort);
     EXPECT_EQ(a.size(), 0); // all args consumed
 }
+
+TEST(GenericArgsParsingTests, parseGenericArgs_scrollLockLocksCursorCmd_enableLegacyLock)
+{
+    const int argc = 2;
+    const char* kScrollLockCmd[argc] = { "stub", "--scroll-lock-locks-cursor" };
+    Argv a(argc, kScrollLockCmd);
+
+    ArgParser argParser(nullptr);
+    ArgsBase argsBase;
+    argParser.setArgsBase(argsBase);
+
+    argParser.parseGenericArgs(a);
+
+    EXPECT_TRUE(argsBase.m_scrollLockLocksCursor);
+    EXPECT_EQ(a.size(), 0); // all args consumed
+}

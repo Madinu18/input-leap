@@ -456,6 +456,9 @@ ArgParser::parseGenericArgs(Argv& argv)
             throw XArgvParserError("invalid UDP port: %s", optarg);
         }
     }
+    else if (argv.shift("--scroll-lock-locks-cursor")) {
+        argsBase().m_scrollLockLocksCursor = true;
+    }
     else if (argv.shift("--profile-dir", nullptr, &optarg)) {
         argsBase().m_profileDirectory = inputleap::fs::u8path(optarg);
     }

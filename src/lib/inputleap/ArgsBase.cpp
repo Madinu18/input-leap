@@ -45,6 +45,7 @@ m_enableCrypto(true),
 m_motionRate(250.0),
 m_enableUdp(true),
 m_udpPort(24801),
+m_scrollLockLocksCursor(false),
 m_profileDirectory(),
 m_pluginDirectory("")
 {
