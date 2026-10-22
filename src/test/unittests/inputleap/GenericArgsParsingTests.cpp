@@ -313,3 +313,51 @@ TEST(GenericArgsParsingTests, parseGenericArgs_dragDropCmdOnLinux_enableDragDrop
     EXPECT_EQ(a.size(), 0); // all args consumed
 }
 #endif
+
+TEST(GenericArgsParsingTests, parseGenericArgs_motionRateCmd_setMotionRate)
+{
+    const int argc = 3;
+    const char* kMotionRateCmd[argc] = { "stub", "--motion-rate", "500" };
+    Argv a(argc, kMotionRateCmd);
+
+    ArgParser argParser(nullptr);
+    ArgsBase argsBase;
+    argParser.setArgsBase(argsBase);
+
+    argParser.parseGenericArgs(a);
+
+    EXPECT_DOUBLE_EQ(500.0, argsBase.m_motionRate);
+    EXPECT_EQ(a.size(), 0); // all args consumed
+}
+
+TEST(GenericArgsParsingTests, parseGenericArgs_noUdpCmd_disableUdp)
+{
+    const int argc = 2;
+    const char* kNoUdpCmd[argc] = { "stub", "--no-udp" };
+    Argv a(argc, kNoUdpCmd);
+
+    ArgParser argParser(nullptr);
+    ArgsBase argsBase;
+    argParser.setArgsBase(argsBase);
+
+    argParser.parseGenericArgs(a);
+
+    EXPECT_FALSE(argsBase.m_enableUdp);
+    EXPECT_EQ(a.size(), 0); // all args consumed
+}
+
+TEST(GenericArgsParsingTests, parseGenericArgs_udpPortCmd_setUdpPort)
+{
+    const int argc = 3;
+    const char* kUdpPortCmd[argc] = { "stub", "--udp-port", "25000" };
+    Argv a(argc, kUdpPortCmd);
+
+    ArgParser argParser(nullptr);
+    ArgsBase argsBase;
+    argParser.setArgsBase(argsBase);
+
+    argParser.parseGenericArgs(a);
+
+    EXPECT_EQ(25000, argsBase.m_udpPort);
+    EXPECT_EQ(a.size(), 0); // all args consumed
+}
