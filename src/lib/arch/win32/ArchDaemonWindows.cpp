@@ -109,9 +109,27 @@ ArchDaemonWindows::installDaemon(const char* name,
             CloseServiceHandle(mgr);
             throw XArchDaemonInstallFailed(error_code_to_string_windows(err));
         }
+
+        // already installed; open it so failure actions can be updated
+        service = OpenService(mgr, name, SERVICE_CHANGE_CONFIG);
     }
-    else {
-        // done with service (but only try to close if not null)
+
+    if (service != nullptr) {
+        // Restart the service if it terminates unexpectedly. The GUI
+        // cannot keep the service alive on its own, and without recovery
+        // actions a crashed service stays stopped until the user opens
+        // services.msc and starts it manually.
+        SERVICE_FAILURE_ACTIONS failureActions{};
+        SC_ACTION actions[3] = {
+            {SC_ACTION_RESTART, 5000},
+            {SC_ACTION_RESTART, 10000},
+            {SC_ACTION_RESTART, 30000}
+        };
+        failureActions.dwResetPeriod = 24 * 60 * 60;
+        failureActions.cActions = 3;
+        failureActions.lpsaActions = actions;
+        ChangeServiceConfig2(service, SERVICE_CONFIG_FAILURE_ACTIONS, &failureActions);
+
         CloseServiceHandle(service);
     }
 
