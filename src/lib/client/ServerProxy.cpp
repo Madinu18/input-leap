@@ -48,6 +48,7 @@ ServerProxy::ServerProxy(Client* client, inputleap::IStream* stream, IEventQueue
     m_dxMouse(0),
     m_dyMouse(0),
     m_ignoreMouse(false),
+    m_motionMessage(false),
     m_keepAliveAlarm(0.0),
     m_keepAliveAlarmTimer(nullptr),
     m_parser(&ServerProxy::parseHandshakeMessage),
@@ -221,6 +222,8 @@ ServerProxy::EResult ServerProxy::parseHandshakeMessage(const std::uint8_t* code
 
 ServerProxy::EResult ServerProxy::parseMessage(const std::uint8_t* code)
 {
+    m_motionMessage = false;
+
     if (memcmp(code, kMsgDMouseMove, 4) == 0) {
         mouseMove();
     }
@@ -328,7 +331,13 @@ ServerProxy::EResult ServerProxy::parseMessage(const std::uint8_t* code)
     // on a data packet.  we provide that packet here.  i don't
     // know why a delayed ACK should cause the server to wait since
     // TCP_NODELAY is enabled.
-    ProtocolUtil::writef(m_stream, kMsgCNoop);
+    //
+    // Mouse motion is exempt: it is sent at up to several hundred
+    // messages per second and a reply for each one would double the
+    // traffic and defeat the purpose of the fast path.
+    if (!m_motionMessage) {
+        ProtocolUtil::writef(m_stream, kMsgCNoop);
+    }
 
     return kOkay;
 }
@@ -695,6 +704,8 @@ ServerProxy::mouseUp()
 void
 ServerProxy::mouseMove()
 {
+    m_motionMessage = true;
+
     // parse
     bool ignore;
     std::int16_t x, y;
@@ -728,6 +739,8 @@ ServerProxy::mouseMove()
 void
 ServerProxy::mouseRelativeMove()
 {
+    m_motionMessage = true;
+
     // parse
     bool ignore;
     std::int16_t dx, dy;

@@ -122,6 +122,10 @@ private:
     std::int32_t m_dxMouse, m_dyMouse;
 
     bool m_ignoreMouse;
+    // True when the message just parsed was mouse motion. Motion messages
+    // are sent at a high rate and must not trigger a reply; doing so would
+    // double the traffic in the server->client direction.
+    bool m_motionMessage;
 
     KeyModifierID m_modifierTranslationTable[kKeyModifierIDLast];
 
