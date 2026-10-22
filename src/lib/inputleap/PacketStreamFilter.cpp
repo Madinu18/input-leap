@@ -86,15 +86,32 @@ std::uint32_t PacketStreamFilter::read(void* buffer, std::uint32_t n)
 
 void PacketStreamFilter::write(const void* buffer, std::uint32_t count)
 {
-    // write the length of the payload
-    std::uint8_t length[4];
-    length[0] = static_cast<std::uint8_t>((count >> 24) & 0xff);
-    length[1] = static_cast<std::uint8_t>((count >> 16) & 0xff);
-    length[2] = static_cast<std::uint8_t>((count >> 8) & 0xff);
-    length[3] = static_cast<std::uint8_t>(count& 0xff);
-    getStream()->write(length, sizeof(length));
+    // A single write is important for latency: the socket has TCP_NODELAY
+    // enabled, so every write becomes its own TCP segment (and its own TLS
+    // record). Small input messages are common, so avoid sending the length
+    // prefix as a separate packet.
+    std::uint8_t header[4];
+    header[0] = static_cast<std::uint8_t>((count >> 24) & 0xff);
+    header[1] = static_cast<std::uint8_t>((count >> 16) & 0xff);
+    header[2] = static_cast<std::uint8_t>((count >> 8) & 0xff);
+    header[3] = static_cast<std::uint8_t>(count & 0xff);
 
-    // write the payload
+    // Most protocol messages (mouse motion, buttons, keys) are tiny. Copy
+    // them into a small stack buffer so that the whole frame is emitted with
+    // one write. Large clipboard/file chunks are left as two writes to avoid
+    // copying them.
+    static constexpr std::uint32_t kMaxStackPacket = 512;
+    if (count <= kMaxStackPacket) {
+        std::uint8_t packet[kMaxStackPacket + sizeof(header)];
+        memcpy(packet, header, sizeof(header));
+        if (count != 0) {
+            memcpy(packet + sizeof(header), buffer, count);
+        }
+        getStream()->write(packet, count + sizeof(header));
+        return;
+    }
+
+    getStream()->write(header, sizeof(header));
     getStream()->write(buffer, count);
 }
 
