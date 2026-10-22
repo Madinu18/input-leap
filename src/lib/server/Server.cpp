@@ -1232,14 +1232,18 @@ void Server::handle_clipboard_grabbed(const Event& event, BaseClientProxy* grabb
 	}
     const auto& info = event.get_data_as<IScreen::ClipboardInfo>();
 
-	// ignore grab if sequence number is old.  always allow primary
-	// screen to grab.
+    // A grab is an explicit user action, so accept it even when the
+    // grabber's sequence number is older than the last clipboard update.
+    // An inactive screen keeps the sequence number from the last time it
+    // was active; rejecting its grab would drop its clipboard update and
+    // later paste would use stale data. TCP ordering already guarantees
+    // that grabs arrive in the order they were sent.
     ClipboardInfo& clipboard = m_clipboards[info.m_id];
     if (grabber != m_primaryClient && info.m_sequenceNumber < clipboard.m_clipboardSeqNum) {
-        LOG_INFO("ignored screen \"%s\" grab of clipboard %d", getName(grabber).c_str(),
-             info.m_id);
-		return;
-	}
+        LOG_DEBUG1("accepting older grab from screen \"%s\" for clipboard %d (seq %u < %u)",
+                   getName(grabber).c_str(), info.m_id,
+                   info.m_sequenceNumber, clipboard.m_clipboardSeqNum);
+    }
 
 	// mark screen as owning clipboard
     LOG_INFO("screen \"%s\" grabbed clipboard %d from \"%s\"", getName(grabber).c_str(),
@@ -1247,12 +1251,10 @@ void Server::handle_clipboard_grabbed(const Event& event, BaseClientProxy* grabb
 	clipboard.m_clipboardOwner  = getName(grabber);
     clipboard.m_clipboardSeqNum = info.m_sequenceNumber;
 
-	// clear the clipboard data (since it's not known at this point)
-	if (clipboard.m_clipboard.open(0)) {
-		clipboard.m_clipboard.clear();
-		clipboard.m_clipboard.close();
-	}
-	clipboard.m_clipboardData = clipboard.m_clipboard.marshall();
+    // Keep the previous data until the grabber sends the new data. If the
+    // transfer is interrupted (for example by a quick screen switch), the
+    // clipboard keeps working with the last known contents instead of
+    // becoming empty.
 
 	// tell all other screens to take ownership of clipboard.  tell the
 	// grabber that it's clipboard isn't dirty.
