@@ -34,6 +34,8 @@
 
 #if SYSAPI_WIN32
 #include "base/IEventQueue.h"
+#include <windows.h>
+#include <timeapi.h>
 #endif
 
 #include <iostream>
@@ -99,6 +101,13 @@ App::run(int argc, char** argv)
     // install application in to arch
     appUtil().adoptApp(this);
 
+#if SYSAPI_WIN32
+    // The mouse motion coalescer uses millisecond timers. Windows defaults
+    // to a ~15.6 ms timer granularity, which would turn a 4 ms flush into
+    // a 15 ms one. Request 1 ms resolution for the lifetime of the process.
+    timeBeginPeriod(1);
+#endif
+
     // HACK: fail by default (saves us setting result in each catch)
     int result = kExitFailed;
 
@@ -119,6 +128,10 @@ App::run(int argc, char** argv)
     }
 
     appUtil().beforeAppExit();
+
+#if SYSAPI_WIN32
+    timeEndPeriod(1);
+#endif
 
     return result;
 }
