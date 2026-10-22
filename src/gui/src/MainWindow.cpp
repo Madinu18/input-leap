@@ -1340,7 +1340,7 @@ bool MainWindow::startService(const QString& name)
 
             if (ShellExecuteExW(&executeInfo)) {
                 if (executeInfo.hProcess != nullptr) {
-                    WaitForSingleObject(executeInfo.hProcess, 10000);
+                    WaitForSingleObject(executeInfo.hProcess, 5000);
                     CloseHandle(executeInfo.hProcess);
                 }
                 started = true;
@@ -1360,7 +1360,7 @@ bool MainWindow::startService(const QString& name)
     // service is asynchronous; sending the IPC command too early would
     // race with the service setting up its socket.
     if (started) {
-        for (int attempt = 0; attempt < 100; ++attempt) {
+        for (int attempt = 0; attempt < 50; ++attempt) {
             SERVICE_STATUS status;
             if (QueryServiceStatus(hService, &status)) {
                 if (status.dwCurrentState == SERVICE_RUNNING) {
