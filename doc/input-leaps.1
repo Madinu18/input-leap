@@ -41,6 +41,16 @@ enable file drag & drop.
 \fB\-\-enable\-crypto\fR
 enable the crypto (ssl) plugin.
 .TP
+\fB\-\-motion\-rate\fR <hz>
+maximum mouse motion messages sent per second (default 250,
+0 disables the limit).
+.TP
+\fB\-\-no\-udp\fR
+disable the encrypted UDP fast path for mouse motion.
+.TP
+\fB\-\-udp\-port\fR <port>
+UDP port used by the fast path (default 24801).
+.TP
 \fB\-\-display\fR <display>
 connect to the X server at <display>
 .TP
