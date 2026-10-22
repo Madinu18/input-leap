@@ -1521,15 +1521,24 @@ void Server::onClipboardChanged(BaseClientProxy* sender, ClipboardID id, std::ui
 		return;
 	}
 
-	// should be the expected client
-	assert(sender == m_clients.find(clipboard.m_clipboardOwner)->second);
-
 	// get data
 	if (!sender->getClipboard(id, &clipboard.m_clipboard)) {
 		LOG_DEBUG("ignored screen \"%s\" update of clipboard %d (failed to get clipboard)",
 				clipboard.m_clipboardOwner.c_str(), id);
 		return;
 	}
+
+    // The screen that supplied the data is authoritative. Two screens can
+    // grab the clipboard almost simultaneously, so the grab and the data
+    // may come from different screens; follow the sender instead of
+    // asserting that it is the last grabber. Keep the sequence number in
+    // sync with the accepted update so older updates are still rejected.
+    if (clipboard.m_clipboardOwner != getName(sender)) {
+        LOG_DEBUG1("clipboard %d owner changed from \"%s\" to \"%s\" while updating",
+                   id, clipboard.m_clipboardOwner.c_str(), getName(sender).c_str());
+        clipboard.m_clipboardOwner = getName(sender);
+    }
+    clipboard.m_clipboardSeqNum = seqNum;
 
 	// ignore if data hasn't changed
     std::string data = clipboard.m_clipboard.marshall();
