@@ -450,6 +450,22 @@ ArchNetworkBSD::setNoDelayOnSocket(ArchSocket s, bool noDelay)
     return (oflag != 0);
 }
 
+void
+ArchNetworkBSD::setDSCPOnSocket(ArchSocket s, int dscp)
+{
+    assert(s != nullptr);
+
+    // Best effort: IPv4 sockets accept IP_TOS, IPv6 sockets need
+    // IPV6_TCLASS. Failures are ignored because marking is optional.
+    int tos = (dscp & 0x3f) << 2;
+    if (setsockopt(s->m_fd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos)) == 0) {
+        return;
+    }
+
+    int tclass = tos;
+    setsockopt(s->m_fd, IPPROTO_IPV6, IPV6_TCLASS, &tclass, sizeof(tclass));
+}
+
 bool
 ArchNetworkBSD::setReuseAddrOnSocket(ArchSocket s, bool reuse)
 {

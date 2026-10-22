@@ -77,6 +77,7 @@ public:
     size_t writeSocket(ArchSocket s, const void* buf, size_t len) override;
     void throwErrorOnSocket(ArchSocket) override;
     bool setNoDelayOnSocket(ArchSocket, bool noDelay) override;
+    void setDSCPOnSocket(ArchSocket, int dscp) override;
     bool setReuseAddrOnSocket(ArchSocket, bool reuse) override;
     std::string getHostName() override;
     ArchNetAddress newAnyAddr(EAddressFamily) override;

@@ -231,6 +231,15 @@ public:
     */
     virtual bool setNoDelayOnSocket(ArchSocket, bool noDelay) = 0;
 
+    //! Set the DSCP field of the IP header (best effort)
+    /*!
+    Marks outgoing packets with the given differentiated services code
+    point. WiFi access points that support WMM map DSCP to an access
+    category, so marking interactive traffic as EF can reduce queueing
+    latency behind bulk traffic.
+    */
+    virtual void setDSCPOnSocket(ArchSocket, int dscp) = 0;
+
     //! Turn address reuse on or off on socket
     /*!
     Allows the address this socket is bound to to be reused while in the

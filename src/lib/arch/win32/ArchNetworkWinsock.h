@@ -85,6 +85,7 @@ public:
                             const void* buf, size_t len);
     virtual void throwErrorOnSocket(ArchSocket);
     virtual bool setNoDelayOnSocket(ArchSocket, bool noDelay);
+    virtual void setDSCPOnSocket(ArchSocket, int dscp);
     virtual bool setReuseAddrOnSocket(ArchSocket, bool reuse);
     virtual std::string getHostName();
     virtual ArchNetAddress newAnyAddr(EAddressFamily);

@@ -304,6 +304,16 @@ TCPSocket::init()
         // that should be sent without (much) delay.  for example, the
         // mouse motion messages are much less useful if they're delayed.
         ARCH->setNoDelayOnSocket(m_socket, true);
+
+        // Mark interactive traffic as EF (DSCP 46). On WiFi with WMM this
+        // maps to the voice access category, which is served ahead of
+        // background/bulk traffic. Best effort: not all APs honour it.
+        try {
+            ARCH->setDSCPOnSocket(m_socket, 46);
+        }
+        catch (XArchNetwork&) {
+            // ignore; marking is optional
+        }
     }
     catch (XArchNetwork& e) {
         try {

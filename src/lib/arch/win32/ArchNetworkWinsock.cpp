@@ -636,6 +636,24 @@ ArchNetworkWinsock::setNoDelayOnSocket(ArchSocket s, bool noDelay)
     return (oflag != 0);
 }
 
+void
+ArchNetworkWinsock::setDSCPOnSocket(ArchSocket s, int dscp)
+{
+    assert(s != nullptr);
+
+    // Best effort: IPv4 sockets accept IP_TOS, IPv6 sockets need
+    // IPV6_TCLASS. Failures are ignored because marking is optional.
+    int tos = (dscp & 0x3f) << 2;
+    if (setsockopt_winsock(s->m_socket, IPPROTO_IP, IP_TOS,
+                           reinterpret_cast<const char*>(&tos), sizeof(tos)) == 0) {
+        return;
+    }
+
+    int tclass = tos;
+    setsockopt_winsock(s->m_socket, IPPROTO_IPV6, IPV6_TCLASS,
+                       reinterpret_cast<const char*>(&tclass), sizeof(tclass));
+}
+
 bool
 ArchNetworkWinsock::setReuseAddrOnSocket(ArchSocket s, bool reuse)
 {
