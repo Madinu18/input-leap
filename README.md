@@ -165,3 +165,22 @@ __Q: Is it possible to use Input Leap on Mac OS X / OS X versions prior to 10.12
 >    - AltGr key combinations when Server is linux and client is Windows don't usually work out of the box. See [#100](https://github.com/input-leap/input-leap/issues/100) for a workaround
 >
 > The complete list of open issues can be found in the ['Issues' tab on GitHub](https://github.com/input-leap/input-leap/issues?q=is%3Aissue+is%3Aopen). Help is always appreciated.
+
+## Changelog
+
+Changes in this fork on top of upstream Input Leap, newest first.
+
+### Unreleased
+
+- **fix(wayland): guard portal input capture cleanup when unavailable**
+  ([`5c0e588`](https://github.com/Madinu18/input-leap/commit/5c0e588a)).
+  The `EI_EVENT_DISCONNECT` handler dereferenced `portal_input_capture_`
+  outside the `HAVE_LIBPORTAL_INPUTCAPTURE` guard, so building with libei
+  support failed against libportal 0.7.x (as shipped by Ubuntu 24.04).
+  Regression introduced in `b7d1242c`.
+- **fix(tests): include `net/FastPath.h` in `NetworkTests.cpp`**
+  ([`2a6b2be`](https://github.com/Madinu18/input-leap/commit/2a6b2bef)).
+  `Server` owns a `std::unique_ptr<FastPathServer>`, so destroying a
+  `Server` requires the complete type. The test only saw the forward
+  declaration and failed with *invalid application of `sizeof` to
+  incomplete type*.
