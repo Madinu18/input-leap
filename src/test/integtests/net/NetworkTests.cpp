@@ -28,6 +28,7 @@
 #include "server/Server.h"
 #include "server/ClientListener.h"
 #include "server/ClientProxy.h"
+#include "net/FastPath.h"
 #include "client/Client.h"
 #include "inputleap/FileChunk.h"
 #include "inputleap/StreamChunker.h"
