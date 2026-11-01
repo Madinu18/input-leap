@@ -185,6 +185,9 @@ using inputleap::OSXTransferOverlay;
     const NSRect bounds = [self bounds];
     const CGFloat line = glowing_ ? inputleap::kGlowWidth : inputleap::kLineWidth;
 
+    [[NSColor clearColor] setFill];
+    NSRectFill(bounds);
+
     NSRect lineRect = bounds;
     switch (direction_) {
     case inputleap::kLeft:

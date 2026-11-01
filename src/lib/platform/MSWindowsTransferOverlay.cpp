@@ -370,8 +370,11 @@ void MSWindowsTransferOverlay::render_edge(EdgeWindow& edge)
         ? 0xFF8BDCFFu   // #8bdcff
         : 0xFF2F6FEDu;  // #2f6fed
 
+    // Keep the full drop zone hit-testable. Layered windows may let the
+    // mouse through pixels with zero alpha, so use the smallest non-zero
+    // alpha outside the visible line.
     std::vector<std::uint32_t> pixels(
-        static_cast<std::size_t>(edge.width) * edge.height, 0);
+        static_cast<std::size_t>(edge.width) * edge.height, 0x01000000u);
 
     auto set_pixel = [&](int x, int y) {
         if (x >= 0 && x < edge.width && y >= 0 && y < edge.height) {
