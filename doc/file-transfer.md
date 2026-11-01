@@ -18,7 +18,8 @@ the **Downloads** folder of the receiving machine.
 
 The line is only mapped while the mouse button is held, so it does not
 interfere with normal clicks. A normal screen-edge drag (the existing
-drag-and-drop behaviour) still works as before.
+drag-and-drop behaviour) still works as before. Line transfer does not require
+the `--enable-drag-drop` option.
 
 ## Destination and naming
 
