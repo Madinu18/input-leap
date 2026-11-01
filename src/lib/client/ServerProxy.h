@@ -51,6 +51,7 @@ public:
     void onInfoChanged();
     bool onGrabClipboard(ClipboardID);
     void onClipboardChanged(ClipboardID, const IClipboard*);
+    bool screenshot_supported() const { return m_screenshotSupported; }
 
     //@}
 
@@ -135,6 +136,7 @@ private:
 
     MessageParser m_parser;
     IEventQueue* m_events;
+    bool m_screenshotSupported;
 };
 
 } // namespace inputleap

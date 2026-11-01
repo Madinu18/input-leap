@@ -158,6 +158,10 @@ public:
     //! Received dragging information from client
     void dragInfoReceived(std::uint32_t fileNum, std::string content);
 
+    //! Called when a client finished sending a screenshot.
+    void on_screenshot_received(const std::string& client_name,
+                                const std::string& png_data);
+
     //! Store ClientListener pointer
     void setListener(ClientListener* p) { m_clientListener = p; }
 

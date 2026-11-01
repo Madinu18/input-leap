@@ -30,6 +30,8 @@ public:
     static void sendClipboard(std::string& data, std::size_t size, ClipboardID id,
                               std::uint32_t sequence, IEventQueue* events,
                               const EventTarget* event_target);
+    static void sendScreenshot(const std::string& data, std::uint32_t request_id,
+                               IEventQueue* events, const EventTarget* event_target);
     static void interruptFile();
 
 private:

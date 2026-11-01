@@ -61,6 +61,12 @@ public:
     */
     virtual bool isPrimary() const { return false; }
 
+    //! Return true if the client can capture screenshots.
+    virtual bool supports_screenshots() const { return false; }
+
+    //! Ask the client to capture a screenshot of its screen.
+    virtual void request_screenshot() {}
+
     //@}
 
     // IClient overrides

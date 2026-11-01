@@ -84,7 +84,8 @@ enum EDirectionMask {
 enum EDataTransfer {
     kDataStart = 1,
     kDataChunk = 2,
-    kDataEnd = 3
+    kDataEnd = 3,
+    kDataError = 4
 };
 
 // Data received constants
@@ -257,6 +258,23 @@ extern const char*        kMsgDMouseWheel1_0;
 // sequence number from the most recent kMsgCEnter.  $1 = clipboard
 // identifier.
 extern const char*        kMsgDClipboard;
+
+// screenshot capability:  secondary -> primary
+// sent once after the handshake when the server advertised the SSUP
+// option.  clients that do not understand the option stay silent, so
+// older clients never send this message.
+extern const char*        kMsgCScreenshotCapable;
+
+// screenshot request:  primary -> secondary
+// $1 = request id.  the secondary must answer with kMsgDScreenshot
+// chunks carrying the same request id.
+extern const char*        kMsgCScreenshotRequest;
+
+// screenshot data:  secondary -> primary
+// $1 = request id, $2 = mark, $3 = chunk data.  the start chunk carries
+// the total size as decimal text, data chunks carry the PNG bytes and
+// the error chunk carries a human readable message.
+extern const char*        kMsgDScreenshot;
 
 // client data:  secondary -> primary
 // $1 = coordinate of leftmost pixel on secondary screen,

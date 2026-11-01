@@ -70,6 +70,7 @@ static const OptionID    kOptionWin32KeepForeground        = OPTION_CODE("_KFW")
 static const OptionID    kOptionClipboardSharing            = OPTION_CODE("CLPS");
 static const OptionID    kOptionClipboardSharingSize        = OPTION_CODE("CLSZ");
 static const OptionID    kOptionFastPath                = OPTION_CODE("FSTP");
+static const OptionID    kOptionScreenshot            = OPTION_CODE("SSUP");
 //@}
 
 //! @name Screen switch corner enumeration

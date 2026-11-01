@@ -19,6 +19,7 @@
 
 #include "inputleap/FileChunk.h"
 #include "inputleap/ClipboardChunk.h"
+#include "inputleap/ScreenshotChunk.h"
 #include "inputleap/protocol_types.h"
 #include "base/EventTypes.h"
 #include "base/Event.h"
@@ -27,6 +28,7 @@
 #include "base/Log.h"
 #include "base/String.h"
 
+#include <algorithm>
 #include <fstream>
 #include <stdexcept>
 
@@ -155,6 +157,31 @@ StreamChunker::interruptFile()
         s_interruptFile = true;
         LOG_INFO("previous dragged file has become invalid");
     }
+}
+
+void StreamChunker::sendScreenshot(const std::string& data, std::uint32_t request_id,
+                                   IEventQueue* events, const EventTarget* event_target)
+{
+    events->add_event(EventType::SCREENSHOT_SENDING, event_target,
+                      create_event_data<ScreenshotChunk>(
+                          ScreenshotChunk::start(request_id, data.size())));
+
+    std::size_t sentLength = 0;
+    while (sentLength < data.size()) {
+        const std::size_t chunkSize =
+            std::min(g_chunkSize, data.size() - sentLength);
+        events->add_event(EventType::SCREENSHOT_SENDING, event_target,
+                          create_event_data<ScreenshotChunk>(
+                              ScreenshotChunk::data(request_id,
+                                                    data.substr(sentLength, chunkSize))));
+        sentLength += chunkSize;
+    }
+
+    events->add_event(EventType::SCREENSHOT_SENDING, event_target,
+                      create_event_data<ScreenshotChunk>(
+                          ScreenshotChunk::end(request_id)));
+
+    LOG_DEBUG("sent screenshot size=%zd", data.size());
 }
 
 } // namespace inputleap

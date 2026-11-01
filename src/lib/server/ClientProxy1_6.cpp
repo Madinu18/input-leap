@@ -23,6 +23,7 @@
 #include "inputleap/ClipboardChunk.h"
 #include "inputleap/Exceptions.h"
 #include "inputleap/FileChunk.h"
+#include "inputleap/ScreenshotChunk.h"
 #include "inputleap/StreamChunker.h"
 #include "server/Server.h"
 #include "io/IStream.h"
@@ -54,6 +55,11 @@ ClientProxy1_6::ClientProxy1_6(const std::string& name,
     m_pendingY(0),
     m_motionTimer(nullptr),
     m_fastPathSession(0),
+    m_screenshotSupported(false),
+    m_screenshotInProgress(false),
+    m_screenshotRequestId(0),
+    m_nextScreenshotRequestId(0),
+    m_screenshotExpectedSize(0),
     m_disconnected(false)
 {
     m_motionRate = m_server->motion_rate();
@@ -335,6 +341,12 @@ bool ClientProxy1_6::parseMessage(const std::uint8_t* code)
     else if (memcmp(code, kMsgDFastPath, 4) == 0) {
         return recv_fast_path_request();
     }
+    else if (memcmp(code, kMsgCScreenshotCapable, 4) == 0) {
+        return recv_screenshot_capable();
+    }
+    else if (memcmp(code, kMsgDScreenshot, 4) == 0) {
+        return recv_screenshot_chunk();
+    }
     return false;
 }
 
@@ -430,6 +442,33 @@ void ClientProxy1_6::grabClipboard(ClipboardID id)
 void ClientProxy1_6::setClipboardDirty(ClipboardID id, bool dirty)
 {
     m_clipboard[id].m_dirty = dirty;
+}
+
+bool ClientProxy1_6::supports_screenshots() const
+{
+    return m_screenshotSupported;
+}
+
+void ClientProxy1_6::request_screenshot()
+{
+    if (!m_screenshotSupported) {
+        LOG_DEBUG("client \"%s\" does not support screenshots", getName().c_str());
+        return;
+    }
+
+    if (m_screenshotInProgress) {
+        LOG_DEBUG("screenshot from client \"%s\" already in progress", getName().c_str());
+        return;
+    }
+
+    m_screenshotInProgress = true;
+    m_screenshotRequestId = ++m_nextScreenshotRequestId;
+    m_screenshotExpectedSize = 0;
+    m_screenshotData.clear();
+
+    ProtocolUtil::writef(getStream(), kMsgCScreenshotRequest, m_screenshotRequestId);
+    LOG_DEBUG("requested screenshot %u from client \"%s\"",
+              m_screenshotRequestId, getName().c_str());
 }
 
 void ClientProxy1_6::keyDown(KeyID key, KeyModifierMask mask, KeyButton button)
@@ -696,6 +735,56 @@ bool ClientProxy1_6::recv_fast_path_request()
                          session_id, &key_string);
     LOG_DEBUG1("negotiated UDP fast path session %u on port %d",
                session_id, m_server->udp_port());
+    return true;
+}
+
+bool ClientProxy1_6::recv_screenshot_capable()
+{
+    m_screenshotSupported = true;
+    LOG_DEBUG1("client \"%s\" supports screenshots", getName().c_str());
+    return true;
+}
+
+bool ClientProxy1_6::recv_screenshot_chunk()
+{
+    std::uint32_t requestId = 0;
+    const int result = ScreenshotChunk::assemble(
+        getStream(), requestId, m_screenshotExpectedSize, m_screenshotData);
+
+    if (result == kStart) {
+        if (!m_screenshotInProgress || requestId != m_screenshotRequestId) {
+            LOG_WARN("unexpected screenshot start from client \"%s\"", getName().c_str());
+            m_screenshotInProgress = false;
+            return true;
+        }
+        LOG_DEBUG("receiving screenshot %u from client \"%s\" size=%zd",
+                  requestId, getName().c_str(), m_screenshotExpectedSize);
+        return true;
+    }
+
+    if (!m_screenshotInProgress || requestId != m_screenshotRequestId) {
+        LOG_WARN("unexpected screenshot chunk from client \"%s\"", getName().c_str());
+        m_screenshotInProgress = false;
+        return true;
+    }
+
+    if (result == kFinish) {
+        std::string data;
+        data.swap(m_screenshotData);
+        m_screenshotInProgress = false;
+        m_screenshotExpectedSize = 0;
+        m_server->on_screenshot_received(getName(), data);
+    }
+    else if (result == kError) {
+        if (!m_screenshotData.empty()) {
+            LOG_ERR("screenshot failed on client \"%s\": %s",
+                    getName().c_str(), m_screenshotData.c_str());
+        }
+        m_screenshotInProgress = false;
+        m_screenshotExpectedSize = 0;
+        m_screenshotData.clear();
+    }
+
     return true;
 }
 

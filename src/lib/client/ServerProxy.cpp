@@ -54,7 +54,8 @@ ServerProxy::ServerProxy(Client* client, inputleap::IStream* stream, IEventQueue
     m_keepAliveAlarm(0.0),
     m_keepAliveAlarmTimer(nullptr),
     m_parser(&ServerProxy::parseHandshakeMessage),
-    m_events(events)
+    m_events(events),
+    m_screenshotSupported(false)
 {
     assert(m_client != nullptr);
     assert(m_stream != nullptr);
@@ -877,6 +878,9 @@ ServerProxy::setOptions()
         else if (options[i] == kOptionHeartbeat) {
             // update keep alive
             setKeepAliveRate(1.0e-3 * static_cast<double>(options[i + 1]));
+        }
+        else if (options[i] == kOptionScreenshot && options[i + 1] != 0) {
+            m_screenshotSupported = true;
         }
 
         if (id != kKeyModifierIDNull) {

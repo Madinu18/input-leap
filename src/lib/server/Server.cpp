@@ -1128,6 +1128,12 @@ Server::sendOptions(BaseClientProxy* client) const
 		optionsList.push_back(1);
 	}
 
+	// advertise cross-device screenshot support. Clients that do not know
+	// this option ignore it; clients that do will answer with a capability
+	// message, so we never send screenshot requests to older clients.
+	optionsList.push_back(kOptionScreenshot);
+	optionsList.push_back(1);
+
 	// send the options
 	client->resetOptions();
 	client->setOptions(optionsList);
@@ -2315,6 +2321,13 @@ void Server::dragInfoReceived(std::uint32_t fileNum, std::string content)
 	DragInformation::parseDragInfo(m_fakeDragFileList, fileNum, content);
 
 	m_screen->startDraggingFiles(m_fakeDragFileList);
+}
+
+void Server::on_screenshot_received(const std::string& client_name,
+                                    const std::string& png_data)
+{
+    LOG_NOTE("received screenshot from \"%s\" (%zd bytes)",
+             client_name.c_str(), png_data.size());
 }
 
 } // namespace inputleap

@@ -274,6 +274,9 @@ enum class EventType : std::uint32_t {
     /// This event is sent whenever a clipboard chunk is transferred.
     CLIPBOARD_SENDING,
 
+    /// This event is sent whenever a screenshot chunk is transferred.
+    SCREENSHOT_SENDING,
+
     /// This event is sent whenever a file chunk is transferred.
     FILE_CHUNK_SENDING,
 

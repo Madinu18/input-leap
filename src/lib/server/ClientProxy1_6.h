@@ -52,6 +52,8 @@ public:
     void setClipboard(ClipboardID, const IClipboard*) override;
     void grabClipboard(ClipboardID) override;
     void setClipboardDirty(ClipboardID, bool) override;
+    bool supports_screenshots() const override;
+    void request_screenshot() override;
     void keyDown(KeyID, KeyModifierMask, KeyButton) override;
     void keyRepeat(KeyID, KeyModifierMask, std::int32_t count, KeyButton) override;
     void keyUp(KeyID, KeyModifierMask, KeyButton) override;
@@ -94,6 +96,8 @@ private:
     bool recvInfo();
     bool recvGrabClipboard();
     bool recv_fast_path_request();
+    bool recv_screenshot_capable();
+    bool recv_screenshot_chunk();
 
     // Mouse motion coalescing. Motion is sent at most m_motionRate times
     // per second. Intermediate absolute positions are discarded (latest
@@ -139,6 +143,17 @@ protected:
 
     // Session id for the encrypted UDP fast path (0 when not negotiated).
     std::uint32_t m_fastPathSession;
+
+    // Set once the client answers the SSUP option.
+    bool m_screenshotSupported;
+
+    // Screenshot transfer state. Only one transfer may be in flight per
+    // client; further requests are dropped until the current one finishes.
+    bool m_screenshotInProgress;
+    std::uint32_t m_screenshotRequestId;
+    std::uint32_t m_nextScreenshotRequestId;
+    std::size_t m_screenshotExpectedSize;
+    std::string m_screenshotData;
 
     // Set once the proxy is disconnecting; prevents queued motion events
     // from scheduling timers on a dying object.

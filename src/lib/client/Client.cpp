@@ -205,6 +205,13 @@ Client::handshakeComplete()
                              static_cast<std::uint8_t>(1));
     }
 
+    // The server advertises screenshot support through the SSUP option.
+    // Announcing only when it did keeps us from sending unknown messages to
+    // older servers.
+    if (m_server != nullptr && m_server->screenshot_supported() && m_stream != nullptr) {
+        ProtocolUtil::writef(m_stream, kMsgCScreenshotCapable);
+    }
+
     send_event(EventType::CLIENT_CONNECTED);
 }
 
