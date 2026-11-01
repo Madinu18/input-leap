@@ -496,20 +496,33 @@ void XWindowsScreen::getCursorPos(std::int32_t& x, std::int32_t& y) const
 
 namespace {
 
-std::uint8_t scale_channel(unsigned long pixel, unsigned long mask)
+struct ChannelInfo {
+    unsigned int shift = 0;
+    unsigned long max = 0;
+};
+
+ChannelInfo channel_info(unsigned long mask)
 {
+    ChannelInfo info;
     if (mask == 0) {
-        return 0;
+        return info;
     }
 
-    unsigned int shift = 0;
     while ((mask & 1ul) == 0) {
         mask >>= 1;
-        ++shift;
+        ++info.shift;
     }
+    info.max = mask;
+    return info;
+}
 
-    const unsigned long value = (pixel >> shift) & mask;
-    return static_cast<std::uint8_t>((value * 255ul + mask / 2) / mask);
+inline std::uint8_t channel_value(unsigned long pixel, const ChannelInfo& channel)
+{
+    if (channel.max == 0) {
+        return 0;
+    }
+    const unsigned long value = (pixel >> channel.shift) & channel.max;
+    return static_cast<std::uint8_t>((value * 255ul + channel.max / 2) / channel.max);
 }
 
 void fallback_channel_masks(int bits_per_pixel, unsigned long& red,
@@ -582,6 +595,9 @@ bool XWindowsScreen::capture_screenshot(Screenshot& screenshot)
                           static_cast<std::size_t>(image->height) * 3);
 
     std::uint8_t* output = screenshot.rgb.data();
+    const ChannelInfo red = channel_info(redMask);
+    const ChannelInfo green = channel_info(greenMask);
+    const ChannelInfo blue = channel_info(blueMask);
 #if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
     const bool direct32 = image->bits_per_pixel == 32 && image->byte_order == MSBFirst;
 #else
@@ -604,9 +620,9 @@ bool XWindowsScreen::capture_screenshot(Screenshot& screenshot)
                 pixel = XGetPixel(image, x, y);
             }
 
-            *output++ = scale_channel(pixel, redMask);
-            *output++ = scale_channel(pixel, greenMask);
-            *output++ = scale_channel(pixel, blueMask);
+            *output++ = channel_value(pixel, red);
+            *output++ = channel_value(pixel, green);
+            *output++ = channel_value(pixel, blue);
         }
     }
 
