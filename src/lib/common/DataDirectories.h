@@ -27,6 +27,9 @@ public:
     static const fs::path& profile();
     static const fs::path& profile(const fs::path& path);
 
+    static const fs::path& cache();
+    static const fs::path& cache(const fs::path& path);
+
     static const fs::path& global();
     static const fs::path& global(const fs::path& path);
 
@@ -43,6 +46,7 @@ public:
                                        const fs::path& curr_profile_path);
 private:
     static fs::path _profile;
+    static fs::path _cache;
     static fs::path _global;
     static fs::path _systemconfig;
 };

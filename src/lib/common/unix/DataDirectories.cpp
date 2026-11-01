@@ -104,6 +104,32 @@ const fs::path& DataDirectories::profile(const fs::path& path)
     return _profile;
 }
 
+static fs::path cache_basedir()
+{
+#if defined(WINAPI_XWINDOWS) || defined(WINAPI_LIBEI)
+    const char* dir = std::getenv("XDG_CACHE_HOME");
+    if (dir != nullptr)
+        return fs::u8path(dir);
+    return unix_home() / ".cache";
+#else
+    // macOS has its own cache location.
+    return unix_home() / "Library/Caches";
+#endif
+}
+
+const fs::path& DataDirectories::cache()
+{
+    if (_cache.empty())
+        _cache = cache_basedir() / "InputLeap";
+    return _cache;
+}
+
+const fs::path& DataDirectories::cache(const fs::path& path)
+{
+    _cache = path;
+    return _cache;
+}
+
 const fs::path& DataDirectories::global()
 {
     if (_global.empty())

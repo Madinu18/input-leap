@@ -21,6 +21,7 @@
 #include "server/Config.h"
 #include "inputleap/clipboard_types.h"
 #include "inputleap/Clipboard.h"
+#include "inputleap/ScreenshotStore.h"
 #include "inputleap/key_types.h"
 #include "inputleap/mouse_types.h"
 #include "inputleap/Fwd.h"
@@ -233,6 +234,10 @@ private:
 
     // change the active screen
     void switchScreen(BaseClientProxy*, std::int32_t x, std::int32_t y, bool forScreenSaver);
+
+    // capture a screenshot on the primary screen or ask the active client
+    bool handle_screenshot_hotkey(KeyID id, KeyModifierMask mask);
+    void capture_primary_screenshot();
 
     // jump to screen
     void jumpToScreen(BaseClientProxy*);
@@ -509,6 +514,11 @@ private:
     ClientListener* m_clientListener;
     ServerArgs m_args;
     std::unique_ptr<FastPathServer> m_fastPath;
+
+    ScreenshotStore m_screenshotStore;
+    // Key that started the current screenshot hotkey, so its release and
+    // auto-repeats can be swallowed instead of leaking to the active screen.
+    KeyID m_screenshotHotkey = kKeyNone;
 };
 
 } // namespace inputleap

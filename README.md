@@ -111,6 +111,16 @@ Windows-specific issues (Scroll Lock, clipboard after switching screens,
 and the background service) are covered in
 [doc/windows-troubleshooting.md](doc/windows-troubleshooting.md).
 
+## Cross-device screenshots
+
+Press `PrintScreen` (Windows and Linux) or `Command+Shift+3` (macOS) while the
+pointer is on a connected client. InputLeap captures that screen, sends the PNG
+back to the server and stores it in a temporary cache that is pruned
+automatically. On the server's own screen the desktop's screenshot tool keeps
+working as before. See
+[doc/cross-device-screenshots.md](doc/cross-device-screenshots.md) for the
+storage locations, retention rules and platform notes.
+
 ## FAQ - Frequently Asked Questions
 
 **Q: Input Leap vs. barrier?**
@@ -172,6 +182,28 @@ Changes in this fork on top of upstream Input Leap, newest first.
 
 ### Unreleased
 
+- **feat: cross-device screenshots**
+  Pressing `PrintScreen` (or `Win+Shift+S` / `Command+Shift+3`) now captures
+  the active screen, transfers the PNG from the client to the server and
+  stores it in a self-pruning cache (newest 50 files, 512 MiB, 7 days). See
+  [doc/cross-device-screenshots.md](doc/cross-device-screenshots.md).
+- **refactor: precompute X11 screenshot channel shifts**
+  ([`74d9867`](https://github.com/Madinu18/input-leap/commit/74d98678)).
+  The RGB conversion no longer searches for the channel shift for every
+  pixel, which keeps full-HD and 4K captures fast.
+- **fix: do not advertise screenshots on Wayland**
+  ([`90316a9`](https://github.com/Madinu18/input-leap/commit/90316a93)).
+  `EiScreen` cannot capture the compositor synchronously, so Wayland clients
+  now leave `PrintScreen` to the compositor's own screenshot tool instead of
+  accepting a request that must fail.
+- **feat: capture screenshots on X11, Windows and macOS**
+  ([`cd9f46d`](https://github.com/Madinu18/input-leap/commit/cd9f46de)).
+  Native desktop capture plus a vendored single-header PNG encoder; no extra
+  image dependency.
+- **feat: add cross-device screenshot transfer protocol**
+  ([`9c9cc57`](https://github.com/Madinu18/input-leap/commit/9c9cc57c)).
+  A new `SSUP` option lets capable clients announce themselves; screenshots
+  then stream back in 32 KB chunks without affecting older peers.
 - **fix(wayland): guard portal input capture cleanup when unavailable**
   ([`5c0e588`](https://github.com/Madinu18/input-leap/commit/5c0e588a)).
   The `EI_EVENT_DISCONNECT` handler dereferenced `portal_input_capture_`

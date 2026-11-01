@@ -49,6 +49,20 @@ const fs::path& DataDirectories::profile(const fs::path& path)
     return _profile;
 }
 
+const fs::path& DataDirectories::cache()
+{
+    if (_cache.empty()) {
+        auto basedir = known_folder_path(FOLDERID_LocalAppData);
+        _cache = basedir / "InputLeap";
+    }
+    return _cache;
+}
+const fs::path& DataDirectories::cache(const fs::path& path)
+{
+    _cache = path;
+    return _cache;
+}
+
 const fs::path& DataDirectories::global()
 {
     if (_global.empty())

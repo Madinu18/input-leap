@@ -25,6 +25,7 @@
 #include "inputleap/FileChunk.h"
 #include "inputleap/IPlatformScreen.h"
 #include "inputleap/DropHelper.h"
+#include "inputleap/Screenshot.h"
 #include "inputleap/option_types.h"
 #include "inputleap/protocol_types.h"
 #include "inputleap/XScreen.h"
@@ -54,6 +55,24 @@
 #include <stdexcept>
 
 namespace inputleap {
+
+namespace {
+
+// PrintScreen is the traditional full-screen shortcut on Linux and Windows.
+// Windows 11 also uses Win+Shift+S and macOS uses Command+Shift+3 for the
+// native screenshot flow; both arrive here as Super+Shift plus the key.
+bool is_screenshot_hotkey(KeyID id, KeyModifierMask mask)
+{
+    if (id == kKeyPrint) {
+        return true;
+    }
+
+    const bool superShift = (mask & KeyModifierSuper) != 0 &&
+                            (mask & KeyModifierShift) != 0;
+    return superShift && (id == '3' || id == 's' || id == 'S');
+}
+
+} // namespace
 
 Server::Server(
 		Config& config,
@@ -1633,6 +1652,16 @@ Server::onKeyDown(KeyID id, KeyModifierMask mask, KeyButton button,
 	LOG_DEBUG1("onKeyDown id=%d mask=0x%04x button=0x%04x", id, mask, button);
 	assert(m_active != nullptr);
 
+	if (m_screenshotHotkey != kKeyNone && id == m_screenshotHotkey) {
+		// The key is still held; auto-repeat must not take more screenshots.
+		return;
+	}
+
+	if (handle_screenshot_hotkey(id, mask)) {
+		m_screenshotHotkey = id;
+		return;
+	}
+
 	// relay
 	if (!m_keyboardBroadcasting && IKeyState::KeyInfo::isDefault(screens)) {
 		m_active->keyDown(id, mask, button);
@@ -1659,6 +1688,11 @@ Server::onKeyUp(KeyID id, KeyModifierMask mask, KeyButton button,
 	LOG_DEBUG1("onKeyUp id=%d mask=0x%04x button=0x%04x", id, mask, button);
 	assert(m_active != nullptr);
 
+	if (m_screenshotHotkey != kKeyNone && id == m_screenshotHotkey) {
+		m_screenshotHotkey = kKeyNone;
+		return;
+	}
+
 	// relay
 	if (!m_keyboardBroadcasting && IKeyState::KeyInfo::isDefault(screens)) {
 		m_active->keyUp(id, mask, button);
@@ -1683,8 +1717,53 @@ void Server::onKeyRepeat(KeyID id, KeyModifierMask mask, std::int32_t count, Key
 	LOG_DEBUG1("onKeyRepeat id=%d mask=0x%04x count=%d button=0x%04x", id, mask, count, button);
 	assert(m_active != nullptr);
 
+	if (m_screenshotHotkey != kKeyNone && id == m_screenshotHotkey) {
+		return;
+	}
+
 	// relay
 	m_active->keyRepeat(id, mask, count, button);
+}
+
+bool Server::handle_screenshot_hotkey(KeyID id, KeyModifierMask mask)
+{
+    if (!is_screenshot_hotkey(id, mask)) {
+        return false;
+    }
+
+    if (m_active == m_primaryClient) {
+        capture_primary_screenshot();
+        return true;
+    }
+
+    if (m_active != nullptr && m_active->supports_screenshots()) {
+        m_active->request_screenshot();
+        return true;
+    }
+
+    // Older clients and clients without a capture backend do not understand
+    // the request. Let the key through so their native screenshot tool still
+    // works, even though the image stays on that machine.
+    LOG_DEBUG("active screen \"%s\" cannot capture screenshots", getName(m_active).c_str());
+    return false;
+}
+
+void Server::capture_primary_screenshot()
+{
+    Screenshot screenshot;
+    if (!m_screen->capture_screenshot(screenshot)) {
+        LOG_ERR("could not capture the primary screen: %s", screenshot.error.c_str());
+        return;
+    }
+
+    std::string png;
+    std::string error;
+    if (!encode_png(screenshot, png, error)) {
+        LOG_ERR("could not encode the primary screen screenshot: %s", error.c_str());
+        return;
+    }
+
+    on_screenshot_received(getName(m_primaryClient), png);
 }
 
 void
@@ -2326,8 +2405,10 @@ void Server::dragInfoReceived(std::uint32_t fileNum, std::string content)
 void Server::on_screenshot_received(const std::string& client_name,
                                     const std::string& png_data)
 {
-    LOG_NOTE("received screenshot from \"%s\" (%zd bytes)",
-             client_name.c_str(), png_data.size());
+    const std::string path = m_screenshotStore.save(png_data, client_name);
+    if (path.empty()) {
+        LOG_ERR("could not save screenshot from \"%s\"", client_name.c_str());
+    }
 }
 
 } // namespace inputleap

@@ -20,6 +20,7 @@
 namespace inputleap {
 
 fs::path DataDirectories::_profile;
+fs::path DataDirectories::_cache;
 fs::path DataDirectories::_global;
 fs::path DataDirectories::_systemconfig;
 
