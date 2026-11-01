@@ -21,6 +21,7 @@
 #include "base/EventTarget.h"
 #include "inputleap/Fwd.h"
 #include "inputleap/IClient.h"
+#include "inputleap/protocol_types.h"
 
 namespace inputleap {
 
@@ -66,6 +67,20 @@ public:
 
     //! Ask the client to capture a screenshot of its screen.
     virtual void request_screenshot() {}
+
+    //! Return true if the client understands file transfer messages.
+    virtual bool supports_file_transfer() const { return false; }
+
+    //! Tell the client which screen edge faces the server.
+    virtual void send_file_transfer_edge(EDirection) {}
+
+    virtual void send_file_offer(std::uint32_t, std::uint32_t,
+                                 const std::string&) {}
+    virtual void send_file_data(std::uint32_t, std::uint8_t,
+                                const std::string&) {}
+    virtual void send_file_accept(std::uint32_t) {}
+    virtual void send_file_reject(std::uint32_t, const std::string&) {}
+    virtual void send_file_done(std::uint32_t, bool, const std::string&) {}
 
     //@}
 

@@ -23,6 +23,8 @@
 #include <cstdlib>     // getenv
 #include <sys/types.h> // getpwuid(_r)
 #include <pwd.h>       // getpwuid(_r)
+#include <fstream>
+#include <string>
 
 namespace inputleap {
 
@@ -128,6 +130,58 @@ const fs::path& DataDirectories::cache(const fs::path& path)
 {
     _cache = path;
     return _cache;
+}
+
+static fs::path download_basedir()
+{
+#if defined(WINAPI_XWINDOWS) || defined(WINAPI_LIBEI)
+    // Prefer the XDG user directory, then fall back to ~/Downloads.
+    fs::path userDirs;
+    const char* configHome = std::getenv("XDG_CONFIG_HOME");
+    if (configHome != nullptr) {
+        userDirs = fs::u8path(configHome) / "user-dirs.dirs";
+    }
+    else {
+        userDirs = unix_home() / ".config/user-dirs.dirs";
+    }
+
+    std::ifstream file(userDirs.string());
+    std::string line;
+    while (std::getline(file, line)) {
+        const std::string key = "XDG_DOWNLOAD_DIR=";
+        if (line.rfind(key, 0) != 0) {
+            continue;
+        }
+
+        std::string value = line.substr(key.size());
+        if (!value.empty() && value.front() == '"' && value.back() == '"') {
+            value = value.substr(1, value.size() - 2);
+        }
+        if (value.rfind("$HOME", 0) == 0) {
+            value.replace(0, 5, unix_home().u8string());
+        }
+        if (!value.empty() && value.back() != '/') {
+            return fs::u8path(value);
+        }
+    }
+    return unix_home() / "Downloads";
+#else
+    // macOS uses the conventional Downloads folder.
+    return unix_home() / "Downloads";
+#endif
+}
+
+const fs::path& DataDirectories::downloads()
+{
+    if (_downloads.empty())
+        _downloads = download_basedir();
+    return _downloads;
+}
+
+const fs::path& DataDirectories::downloads(const fs::path& path)
+{
+    _downloads = path;
+    return _downloads;
 }
 
 const fs::path& DataDirectories::global()

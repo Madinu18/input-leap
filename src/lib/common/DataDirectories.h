@@ -30,6 +30,9 @@ public:
     static const fs::path& cache();
     static const fs::path& cache(const fs::path& path);
 
+    static const fs::path& downloads();
+    static const fs::path& downloads(const fs::path& path);
+
     static const fs::path& global();
     static const fs::path& global(const fs::path& path);
 
@@ -47,6 +50,7 @@ public:
 private:
     static fs::path _profile;
     static fs::path _cache;
+    static fs::path _downloads;
     static fs::path _global;
     static fs::path _systemconfig;
 };

@@ -91,6 +91,19 @@ Client::Client(IEventQueue* events, const std::string& name, const NetworkAddres
     m_events->add_handler(EventType::CLIENT_FAST_PATH_MOTION, get_event_target(),
                           [this](const auto& e){ handle_fast_path_motion(e); });
 
+    m_transferSender = std::make_unique<FileTransferSender>(m_events, this);
+    m_events->add_handler(EventType::TRANSFER_FILES_DROPPED,
+                          m_screen->get_event_target(),
+                          [this](const auto& e){ handle_transfer_drop_event(e); });
+    m_events->add_handler(EventType::TRANSFER_SEND_OFFER, this,
+                          [this](const auto& e){ handle_transfer_send_offer_event(e); });
+    m_events->add_handler(EventType::TRANSFER_SEND_CHUNK, this,
+                          [this](const auto& e){ handle_transfer_send_chunk_event(e); });
+    m_events->add_handler(EventType::TRANSFER_SEND_PROGRESS, this,
+                          [this](const auto& e){ handle_transfer_send_progress_event(e); });
+    m_events->add_handler(EventType::TRANSFER_SEND_RESULT, this,
+                          [this](const auto& e){ handle_transfer_send_result_event(e); });
+
     if (m_args.m_enableDragDrop) {
         m_events->add_handler(EventType::FILE_CHUNK_SENDING, this,
                               [this](const auto& e){ handle_file_chunk_sending(e); });
@@ -108,6 +121,12 @@ Client::~Client()
     m_events->remove_handler(EventType::SCREEN_SUSPEND, get_event_target());
     m_events->remove_handler(EventType::SCREEN_RESUME, get_event_target());
     m_events->remove_handler(EventType::CLIENT_FAST_PATH_MOTION, get_event_target());
+    m_events->remove_handler(EventType::TRANSFER_FILES_DROPPED,
+                             m_screen->get_event_target());
+    m_events->remove_handler(EventType::TRANSFER_SEND_OFFER, this);
+    m_events->remove_handler(EventType::TRANSFER_SEND_CHUNK, this);
+    m_events->remove_handler(EventType::TRANSFER_SEND_PROGRESS, this);
+    m_events->remove_handler(EventType::TRANSFER_SEND_RESULT, this);
 
     stop_fast_path();
 
@@ -214,6 +233,11 @@ Client::handshakeComplete()
         m_screen != nullptr && m_screen->can_capture_screenshot() &&
         m_stream != nullptr) {
         ProtocolUtil::writef(m_stream, kMsgCScreenshotCapable);
+    }
+
+    if (m_server != nullptr && m_server->file_transfer_supported() &&
+        m_stream != nullptr) {
+        ProtocolUtil::writef(m_stream, kMsgCTransferCapable);
     }
 
     send_event(EventType::CLIENT_CONNECTED);
@@ -324,6 +348,87 @@ bool Client::capture_screenshot(Screenshot& screenshot)
         return false;
     }
     return m_screen->capture_screenshot(screenshot);
+}
+
+void Client::set_transfer_edge(EDirection edge)
+{
+    m_transferEdge = edge;
+    LOG_DEBUG1("file transfer edge from server: %d", static_cast<int>(edge));
+    std::vector<EDirection> edges;
+    if (edge != kNoDirection) {
+        edges.push_back(edge);
+    }
+    m_screen->transfer_set_peers(edges);
+}
+
+void Client::on_file_offer(std::uint32_t id, std::uint32_t size,
+                           const std::string& name)
+{
+    if (m_server == nullptr) {
+        return;
+    }
+
+    std::string error;
+    if (m_transferReceiver.active() ||
+        !m_transferReceiver.offer(id, size, name, error)) {
+        if (error.empty()) {
+            error = "Another file transfer is already in progress";
+        }
+        m_server->send_file_reject(id, error);
+        LOG_WARN("rejected file offer: %s", error.c_str());
+        return;
+    }
+
+    m_server->send_file_accept(id);
+    m_screen->transfer_progress(m_transferReceiver.name(), 0,
+                                m_transferReceiver.total(), false);
+    LOG_NOTE("receiving \"%s\"", m_transferReceiver.name().c_str());
+}
+
+void Client::on_file_data(std::uint32_t id, std::uint8_t mark,
+                          const std::string& data)
+{
+    if (m_server == nullptr) {
+        return;
+    }
+
+    std::string message;
+    const auto result = m_transferReceiver.data(id, mark, data, message);
+    if (result == FileTransferReceiver::Result::InProgress) {
+        if (m_transferReceiver.take_progress()) {
+            m_screen->transfer_progress(m_transferReceiver.name(),
+                                        m_transferReceiver.done(),
+                                        m_transferReceiver.total(), false);
+        }
+        return;
+    }
+
+    if (result == FileTransferReceiver::Result::Finished) {
+        m_server->send_file_done(id, true, message);
+        LOG_NOTE("saved received file to %s", message.c_str());
+        m_screen->transfer_finish("Saved to " + message, true);
+    }
+    else {
+        m_server->send_file_done(id, false, message);
+        LOG_ERR("file transfer failed: %s", message.c_str());
+        m_screen->transfer_finish(message, false);
+    }
+}
+
+void Client::on_file_transfer_accept(std::uint32_t id)
+{
+    m_transferSender->on_accept(id);
+}
+
+void Client::on_file_transfer_reject(std::uint32_t id, const std::string& reason)
+{
+    m_transferSender->on_reject(id, reason);
+}
+
+void Client::on_file_transfer_done(std::uint32_t id, bool success,
+                                   const std::string& message)
+{
+    m_transferSender->on_done(id, success, message);
 }
 
 void Client::keyRepeat(KeyID id, KeyModifierMask mask, std::int32_t count, KeyButton button)
@@ -608,6 +713,15 @@ Client::cleanupConnection()
     stop_fast_path();
     m_fastPathSupported = false;
 
+    if (m_transferSender) {
+        m_transferSender->cancel();
+    }
+    m_transferReceiver.abort();
+    m_transferEdge = kNoDirection;
+    if (m_screen != nullptr) {
+        m_screen->transfer_set_peers({});
+    }
+
     if (m_stream != nullptr) {
         m_events->remove_handler(EventType::STREAM_INPUT_READY, m_stream->get_event_target());
         m_events->remove_handler(EventType::STREAM_OUTPUT_ERROR, m_stream->get_event_target());
@@ -801,6 +915,62 @@ void Client::handle_file_receive_completed(const Event& event)
     (void) event;
 
     onFileReceiveCompleted();
+}
+
+void Client::handle_transfer_drop_event(const Event& event)
+{
+    const auto& drop = event.get_data_as<TransferDrop>();
+    if (drop.files.empty() || m_transferEdge == kNoDirection ||
+        m_server == nullptr) {
+        return;
+    }
+
+    if (m_transferSender->busy()) {
+        m_screen->transfer_finish("Another transfer is already in progress", false);
+        return;
+    }
+
+    LOG_NOTE("offering %zd file(s) to the server", drop.files.size());
+    m_transferSender->enqueue_files(drop.files);
+}
+
+void Client::handle_transfer_send_offer_event(const Event& event)
+{
+    if (m_server == nullptr) {
+        return;
+    }
+    const auto& offer = event.get_data_as<FileTransferOffer>();
+    m_server->send_file_offer(offer.id, offer.size, offer.name);
+}
+
+void Client::handle_transfer_send_chunk_event(const Event& event)
+{
+    if (m_server == nullptr) {
+        return;
+    }
+    const auto& chunk = event.get_data_as<FileTransferChunk>();
+    m_server->send_file_data(chunk.id, chunk.mark, chunk.data);
+    if (chunk.mark == kDataChunk) {
+        m_transferSender->on_chunk_sent();
+    }
+}
+
+void Client::handle_transfer_send_progress_event(const Event& event)
+{
+    const auto& progress = event.get_data_as<FileTransferProgress>();
+    m_screen->transfer_progress(progress.name, progress.done, progress.total, true);
+}
+
+void Client::handle_transfer_send_result_event(const Event& event)
+{
+    const auto& result = event.get_data_as<FileTransferResult>();
+    if (result.success) {
+        LOG_NOTE("file transfer complete: %s", result.message.c_str());
+    }
+    else {
+        LOG_WARN("file transfer failed: %s", result.message.c_str());
+    }
+    m_screen->transfer_finish(result.message, result.success);
 }
 
 void

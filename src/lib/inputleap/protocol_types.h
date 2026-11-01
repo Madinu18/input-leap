@@ -276,6 +276,34 @@ extern const char*        kMsgCScreenshotRequest;
 // the error chunk carries a human readable message.
 extern const char*        kMsgDScreenshot;
 
+// file transfer capability:  secondary -> primary
+// sent after the handshake when the server advertised the XFER option.
+extern const char*        kMsgCTransferCapable;
+
+// file transfer edge:  primary -> secondary
+// $1 = EDirection of the server relative to this client (0 = none).
+extern const char*        kMsgCTransferEdge;
+
+// file offer:  primary <-> secondary
+// $1 = transfer id, $2 = file size, $3 = file name.
+extern const char*        kMsgCFileOffer;
+
+// file offer accepted:  primary <-> secondary
+// $1 = transfer id.
+extern const char*        kMsgCFileAccept;
+
+// file offer rejected:  primary <-> secondary
+// $1 = transfer id, $2 = reason.
+extern const char*        kMsgCFileReject;
+
+// file transfer finished:  primary <-> secondary
+// $1 = transfer id, $2 = success (1/0), $3 = saved path or error.
+extern const char*        kMsgCFileDone;
+
+// file data:  primary <-> secondary
+// $1 = transfer id, $2 = mark (chunk/end/error), $3 = file bytes or error.
+extern const char*        kMsgDFileData;
+
 // client data:  secondary -> primary
 // $1 = coordinate of leftmost pixel on secondary screen,
 // $2 = coordinate of topmost pixel on secondary screen,

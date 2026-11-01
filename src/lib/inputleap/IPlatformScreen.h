@@ -21,11 +21,14 @@
 #include "inputleap/DragInformation.h"
 #include "inputleap/Screenshot.h"
 #include "inputleap/clipboard_types.h"
+#include "inputleap/protocol_types.h"
 #include "inputleap/IScreen.h"
 #include "inputleap/IPrimaryScreen.h"
 #include "inputleap/ISecondaryScreen.h"
 #include "inputleap/IKeyState.h"
 #include "inputleap/option_types.h"
+
+#include <vector>
 
 namespace inputleap {
 
@@ -156,6 +159,20 @@ public:
 
     //! Return true if capture_screenshot() can work on this platform.
     virtual bool can_capture_screenshot() const { return true; }
+
+    //! Configure which screen edges can receive file drops.
+    virtual void transfer_set_peers(const std::vector<EDirection>&)
+    {
+    }
+
+    //! Update the local transfer progress overlay.
+    virtual void transfer_progress(const std::string&, std::uint64_t, std::uint64_t,
+                                   bool)
+    {
+    }
+
+    //! Finish the local transfer progress overlay.
+    virtual void transfer_finish(const std::string&, bool) {}
 
     //@}
     //! @name accessors

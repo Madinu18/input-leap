@@ -54,6 +54,16 @@ public:
     void setClipboardDirty(ClipboardID, bool) override;
     bool supports_screenshots() const override;
     void request_screenshot() override;
+    bool supports_file_transfer() const override;
+    void send_file_transfer_edge(EDirection edge) override;
+    void send_file_offer(std::uint32_t id, std::uint32_t size,
+                         const std::string& name) override;
+    void send_file_data(std::uint32_t id, std::uint8_t mark,
+                        const std::string& data) override;
+    void send_file_accept(std::uint32_t id) override;
+    void send_file_reject(std::uint32_t id, const std::string& reason) override;
+    void send_file_done(std::uint32_t id, bool success,
+                        const std::string& message) override;
     void keyDown(KeyID, KeyModifierMask, KeyButton) override;
     void keyRepeat(KeyID, KeyModifierMask, std::int32_t count, KeyButton) override;
     void keyUp(KeyID, KeyModifierMask, KeyButton) override;
@@ -98,6 +108,12 @@ private:
     bool recv_fast_path_request();
     bool recv_screenshot_capable();
     bool recv_screenshot_chunk();
+    bool recv_file_transfer_capable();
+    bool recv_file_offer();
+    bool recv_file_data();
+    bool recv_file_accept();
+    bool recv_file_reject();
+    bool recv_file_done();
 
     // Mouse motion coalescing. Motion is sent at most m_motionRate times
     // per second. Intermediate absolute positions are discarded (latest
@@ -146,6 +162,9 @@ protected:
 
     // Set once the client answers the SSUP option.
     bool m_screenshotSupported;
+
+    // Set once the client answers the XFER option.
+    bool m_fileTransferSupported;
 
     // Screenshot transfer state. Only one transfer may be in flight per
     // client; further requests are dropped until the current one finishes.

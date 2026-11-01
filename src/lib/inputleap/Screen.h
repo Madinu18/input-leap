@@ -28,6 +28,7 @@
 #include "inputleap/option_types.h"
 #include "base/Fwd.h"
 #include <memory>
+#include <vector>
 
 namespace inputleap {
 
@@ -311,6 +312,22 @@ public:
     bool can_capture_screenshot() const
     {
         return m_screen->can_capture_screenshot();
+    }
+
+    void transfer_set_peers(const std::vector<EDirection>& edges)
+    {
+        m_screen->transfer_set_peers(edges);
+    }
+
+    void transfer_progress(const std::string& name, std::uint64_t done,
+                           std::uint64_t total, bool sending)
+    {
+        m_screen->transfer_progress(name, done, total, sending);
+    }
+
+    void transfer_finish(const std::string& message, bool success)
+    {
+        m_screen->transfer_finish(message, success);
     }
 
 protected:

@@ -132,6 +132,33 @@ bool PlatformScreenLoggingWrapper::can_capture_screenshot() const
     return result;
 }
 
+void PlatformScreenLoggingWrapper::transfer_set_peers(
+    const std::vector<EDirection>& edges)
+{
+    LOG_DEBUG1("PlatformScreen::transfer_set_peers() count=%d",
+               static_cast<int>(edges.size()));
+    screen_->transfer_set_peers(edges);
+}
+
+void PlatformScreenLoggingWrapper::transfer_progress(const std::string& name,
+                                                     std::uint64_t done,
+                                                     std::uint64_t total,
+                                                     bool sending)
+{
+    LOG_DEBUG1("PlatformScreen::transfer_progress() name=%s %llu/%llu sending=%d",
+               name.c_str(), static_cast<unsigned long long>(done),
+               static_cast<unsigned long long>(total), sending);
+    screen_->transfer_progress(name, done, total, sending);
+}
+
+void PlatformScreenLoggingWrapper::transfer_finish(const std::string& message,
+                                                   bool success)
+{
+    LOG_DEBUG1("PlatformScreen::transfer_finish() success=%d message=%s",
+               success, message.c_str());
+    screen_->transfer_finish(message, success);
+}
+
 std::string& PlatformScreenLoggingWrapper::getDraggingFilename()
 {
     auto& result = screen_->getDraggingFilename();

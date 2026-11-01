@@ -71,6 +71,7 @@ static const OptionID    kOptionClipboardSharing            = OPTION_CODE("CLPS"
 static const OptionID    kOptionClipboardSharingSize        = OPTION_CODE("CLSZ");
 static const OptionID    kOptionFastPath                = OPTION_CODE("FSTP");
 static const OptionID    kOptionScreenshot            = OPTION_CODE("SSUP");
+static const OptionID    kOptionFileTransfer          = OPTION_CODE("XFER");
 //@}
 
 //! @name Screen switch corner enumeration

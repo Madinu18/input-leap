@@ -24,6 +24,7 @@
 #include "inputleap/IClient.h"
 #include "inputleap/Clipboard.h"
 #include "inputleap/DragInformation.h"
+#include "inputleap/FileTransfer.h"
 #include "inputleap/INode.h"
 #include "inputleap/ClientArgs.h"
 #include "net/Fwd.h"
@@ -98,6 +99,19 @@ public:
 
     //! Capture the local screen for a server screenshot request
     bool capture_screenshot(Screenshot& screenshot);
+
+    //! Configure the edge that faces the server for file drops
+    void set_transfer_edge(EDirection edge);
+
+    //! File transfer messages from the server
+    void on_file_offer(std::uint32_t id, std::uint32_t size,
+                       const std::string& name);
+    void on_file_data(std::uint32_t id, std::uint8_t mark,
+                      const std::string& data);
+    void on_file_transfer_accept(std::uint32_t id);
+    void on_file_transfer_reject(std::uint32_t id, const std::string& reason);
+    void on_file_transfer_done(std::uint32_t id, bool success,
+                               const std::string& message);
 
 
     //@}
@@ -195,6 +209,11 @@ private:
     void handle_file_receive_completed(const Event&);
     void handle_stop_retry();
     void onFileReceiveCompleted();
+    void handle_transfer_drop_event(const Event& event);
+    void handle_transfer_send_offer_event(const Event& event);
+    void handle_transfer_send_chunk_event(const Event& event);
+    void handle_transfer_send_progress_event(const Event& event);
+    void handle_transfer_send_result_event(const Event& event);
     void sendClipboardThread(void*);
     void start_fast_path(int port, std::uint32_t session,
                          const std::array<std::uint8_t, 16>& key);
@@ -234,6 +253,10 @@ private:
     size_t m_maximumClipboardSize;
     bool m_fastPathSupported;
     double m_fastPathLastMotion;
+
+    std::unique_ptr<FileTransferSender> m_transferSender;
+    FileTransferReceiver m_transferReceiver;
+    EDirection m_transferEdge = kNoDirection;
 };
 
 } // namespace inputleap

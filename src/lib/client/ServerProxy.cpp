@@ -57,7 +57,8 @@ ServerProxy::ServerProxy(Client* client, inputleap::IStream* stream, IEventQueue
     m_keepAliveAlarmTimer(nullptr),
     m_parser(&ServerProxy::parseHandshakeMessage),
     m_events(events),
-    m_screenshotSupported(false)
+    m_screenshotSupported(false),
+    m_fileTransferSupported(false)
 {
     assert(m_client != nullptr);
     assert(m_stream != nullptr);
@@ -322,6 +323,24 @@ ServerProxy::EResult ServerProxy::parseMessage(const std::uint8_t* code)
     }
     else if (memcmp(code, kMsgCScreenshotRequest, 4) == 0) {
         screenshot();
+    }
+    else if (memcmp(code, kMsgCTransferEdge, 4) == 0) {
+        transferEdge();
+    }
+    else if (memcmp(code, kMsgCFileOffer, 4) == 0) {
+        fileOffer();
+    }
+    else if (memcmp(code, kMsgDFileData, 4) == 0) {
+        fileData();
+    }
+    else if (memcmp(code, kMsgCFileAccept, 4) == 0) {
+        fileAccept();
+    }
+    else if (memcmp(code, kMsgCFileReject, 4) == 0) {
+        fileReject();
+    }
+    else if (memcmp(code, kMsgCFileDone, 4) == 0) {
+        fileDone();
     }
 
     else if (memcmp(code, kMsgCClose, 4) == 0) {
@@ -890,6 +909,9 @@ ServerProxy::setOptions()
         else if (options[i] == kOptionScreenshot && options[i + 1] != 0) {
             m_screenshotSupported = true;
         }
+        else if (options[i] == kOptionFileTransfer && options[i + 1] != 0) {
+            m_fileTransferSupported = true;
+        }
 
         if (id != kKeyModifierIDNull) {
             m_modifierTranslationTable[id] =
@@ -992,6 +1014,100 @@ void ServerProxy::send_screenshot_failure(std::uint32_t requestId,
     std::string message = error;
     ProtocolUtil::writef(m_stream, kMsgDScreenshot, requestId,
                          static_cast<std::uint8_t>(kDataError), &message);
+}
+
+void ServerProxy::transferEdge()
+{
+    std::uint8_t edge = 0;
+    if (!ProtocolUtil::readf(m_stream, kMsgCTransferEdge + 4, &edge)) {
+        return;
+    }
+    m_client->set_transfer_edge(static_cast<EDirection>(edge));
+}
+
+void ServerProxy::fileOffer()
+{
+    std::uint32_t id = 0;
+    std::uint32_t size = 0;
+    std::string name;
+    if (!ProtocolUtil::readf(m_stream, kMsgCFileOffer + 4, &id, &size, &name)) {
+        return;
+    }
+    m_client->on_file_offer(id, size, name);
+}
+
+void ServerProxy::fileData()
+{
+    std::uint32_t id = 0;
+    std::uint8_t mark = 0;
+    std::string data;
+    if (!ProtocolUtil::readf(m_stream, kMsgDFileData + 4, &id, &mark, &data)) {
+        return;
+    }
+    m_client->on_file_data(id, mark, data);
+}
+
+void ServerProxy::fileAccept()
+{
+    std::uint32_t id = 0;
+    if (!ProtocolUtil::readf(m_stream, kMsgCFileAccept + 4, &id)) {
+        return;
+    }
+    m_client->on_file_transfer_accept(id);
+}
+
+void ServerProxy::fileReject()
+{
+    std::uint32_t id = 0;
+    std::string reason;
+    if (!ProtocolUtil::readf(m_stream, kMsgCFileReject + 4, &id, &reason)) {
+        return;
+    }
+    m_client->on_file_transfer_reject(id, reason);
+}
+
+void ServerProxy::fileDone()
+{
+    std::uint32_t id = 0;
+    std::uint8_t success = 0;
+    std::string message;
+    if (!ProtocolUtil::readf(m_stream, kMsgCFileDone + 4, &id, &success, &message)) {
+        return;
+    }
+    m_client->on_file_transfer_done(id, success != 0, message);
+}
+
+void ServerProxy::send_file_offer(std::uint32_t id, std::uint32_t size,
+                                  const std::string& name)
+{
+    std::string copy = name;
+    ProtocolUtil::writef(m_stream, kMsgCFileOffer, id, size, &copy);
+}
+
+void ServerProxy::send_file_data(std::uint32_t id, std::uint8_t mark,
+                                 const std::string& data)
+{
+    std::string copy = data;
+    ProtocolUtil::writef(m_stream, kMsgDFileData, id, mark, &copy);
+}
+
+void ServerProxy::send_file_accept(std::uint32_t id)
+{
+    ProtocolUtil::writef(m_stream, kMsgCFileAccept, id);
+}
+
+void ServerProxy::send_file_reject(std::uint32_t id, const std::string& reason)
+{
+    std::string copy = reason;
+    ProtocolUtil::writef(m_stream, kMsgCFileReject, id, &copy);
+}
+
+void ServerProxy::send_file_done(std::uint32_t id, bool success,
+                                 const std::string& message)
+{
+    std::string copy = message;
+    ProtocolUtil::writef(m_stream, kMsgCFileDone, id,
+                         static_cast<std::uint8_t>(success ? 1 : 0), &copy);
 }
 
 void ServerProxy::file_chunk_sending(const FileChunk& chunk)

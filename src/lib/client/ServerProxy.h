@@ -52,6 +52,7 @@ public:
     bool onGrabClipboard(ClipboardID);
     void onClipboardChanged(ClipboardID, const IClipboard*);
     bool screenshot_supported() const { return m_screenshotSupported; }
+    bool file_transfer_supported() const { return m_fileTransferSupported; }
 
     //@}
 
@@ -110,6 +111,22 @@ private:
     void dragInfoReceived();
     void screenshot();
     void send_screenshot_failure(std::uint32_t requestId, const std::string& error);
+    void transferEdge();
+    void fileOffer();
+    void fileData();
+    void fileAccept();
+    void fileReject();
+    void fileDone();
+public:
+    void send_file_offer(std::uint32_t id, std::uint32_t size,
+                         const std::string& name);
+    void send_file_data(std::uint32_t id, std::uint8_t mark,
+                        const std::string& data);
+    void send_file_accept(std::uint32_t id);
+    void send_file_reject(std::uint32_t id, const std::string& reason);
+    void send_file_done(std::uint32_t id, bool success,
+                        const std::string& message);
+private:
     void handle_clipboard_sending_event(const Event&);
     void handle_screenshot_sending_event(const Event&);
 
@@ -140,6 +157,7 @@ private:
     MessageParser m_parser;
     IEventQueue* m_events;
     bool m_screenshotSupported;
+    bool m_fileTransferSupported;
 };
 
 } // namespace inputleap

@@ -56,6 +56,7 @@ ClientProxy1_6::ClientProxy1_6(const std::string& name,
     m_motionTimer(nullptr),
     m_fastPathSession(0),
     m_screenshotSupported(false),
+    m_fileTransferSupported(false),
     m_screenshotInProgress(false),
     m_screenshotRequestId(0),
     m_nextScreenshotRequestId(0),
@@ -347,6 +348,24 @@ bool ClientProxy1_6::parseMessage(const std::uint8_t* code)
     else if (memcmp(code, kMsgDScreenshot, 4) == 0) {
         return recv_screenshot_chunk();
     }
+    else if (memcmp(code, kMsgCTransferCapable, 4) == 0) {
+        return recv_file_transfer_capable();
+    }
+    else if (memcmp(code, kMsgCFileOffer, 4) == 0) {
+        return recv_file_offer();
+    }
+    else if (memcmp(code, kMsgDFileData, 4) == 0) {
+        return recv_file_data();
+    }
+    else if (memcmp(code, kMsgCFileAccept, 4) == 0) {
+        return recv_file_accept();
+    }
+    else if (memcmp(code, kMsgCFileReject, 4) == 0) {
+        return recv_file_reject();
+    }
+    else if (memcmp(code, kMsgCFileDone, 4) == 0) {
+        return recv_file_done();
+    }
     return false;
 }
 
@@ -469,6 +488,50 @@ void ClientProxy1_6::request_screenshot()
     ProtocolUtil::writef(getStream(), kMsgCScreenshotRequest, m_screenshotRequestId);
     LOG_DEBUG("requested screenshot %u from client \"%s\"",
               m_screenshotRequestId, getName().c_str());
+}
+
+bool ClientProxy1_6::supports_file_transfer() const
+{
+    return m_fileTransferSupported;
+}
+
+void ClientProxy1_6::send_file_transfer_edge(EDirection edge)
+{
+    ProtocolUtil::writef(getStream(), kMsgCTransferEdge,
+                         static_cast<std::uint8_t>(edge));
+}
+
+void ClientProxy1_6::send_file_offer(std::uint32_t id, std::uint32_t size,
+                                     const std::string& name)
+{
+    std::string copy = name;
+    ProtocolUtil::writef(getStream(), kMsgCFileOffer, id, size, &copy);
+}
+
+void ClientProxy1_6::send_file_data(std::uint32_t id, std::uint8_t mark,
+                                    const std::string& data)
+{
+    std::string copy = data;
+    ProtocolUtil::writef(getStream(), kMsgDFileData, id, mark, &copy);
+}
+
+void ClientProxy1_6::send_file_accept(std::uint32_t id)
+{
+    ProtocolUtil::writef(getStream(), kMsgCFileAccept, id);
+}
+
+void ClientProxy1_6::send_file_reject(std::uint32_t id, const std::string& reason)
+{
+    std::string copy = reason;
+    ProtocolUtil::writef(getStream(), kMsgCFileReject, id, &copy);
+}
+
+void ClientProxy1_6::send_file_done(std::uint32_t id, bool success,
+                                    const std::string& message)
+{
+    std::string copy = message;
+    ProtocolUtil::writef(getStream(), kMsgCFileDone, id,
+                         static_cast<std::uint8_t>(success ? 1 : 0), &copy);
 }
 
 void ClientProxy1_6::keyDown(KeyID key, KeyModifierMask mask, KeyButton button)
@@ -785,6 +848,71 @@ bool ClientProxy1_6::recv_screenshot_chunk()
         m_screenshotData.clear();
     }
 
+    return true;
+}
+
+bool ClientProxy1_6::recv_file_transfer_capable()
+{
+    m_fileTransferSupported = true;
+    LOG_DEBUG1("client \"%s\" supports file transfer", getName().c_str());
+    m_server->on_file_transfer_capable(this);
+    return true;
+}
+
+bool ClientProxy1_6::recv_file_offer()
+{
+    std::uint32_t id = 0;
+    std::uint32_t size = 0;
+    std::string name;
+    if (!ProtocolUtil::readf(getStream(), kMsgCFileOffer + 4, &id, &size, &name)) {
+        return false;
+    }
+    m_server->on_file_offer(this, id, size, name);
+    return true;
+}
+
+bool ClientProxy1_6::recv_file_data()
+{
+    std::uint32_t id = 0;
+    std::uint8_t mark = 0;
+    std::string data;
+    if (!ProtocolUtil::readf(getStream(), kMsgDFileData + 4, &id, &mark, &data)) {
+        return false;
+    }
+    m_server->on_file_data(this, id, mark, data);
+    return true;
+}
+
+bool ClientProxy1_6::recv_file_accept()
+{
+    std::uint32_t id = 0;
+    if (!ProtocolUtil::readf(getStream(), kMsgCFileAccept + 4, &id)) {
+        return false;
+    }
+    m_server->on_file_transfer_accept(id);
+    return true;
+}
+
+bool ClientProxy1_6::recv_file_reject()
+{
+    std::uint32_t id = 0;
+    std::string reason;
+    if (!ProtocolUtil::readf(getStream(), kMsgCFileReject + 4, &id, &reason)) {
+        return false;
+    }
+    m_server->on_file_transfer_reject(id, reason);
+    return true;
+}
+
+bool ClientProxy1_6::recv_file_done()
+{
+    std::uint32_t id = 0;
+    std::uint8_t success = 0;
+    std::string message;
+    if (!ProtocolUtil::readf(getStream(), kMsgCFileDone + 4, &id, &success, &message)) {
+        return false;
+    }
+    m_server->on_file_transfer_done(id, success != 0, message);
     return true;
 }
 

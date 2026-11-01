@@ -63,6 +63,22 @@ const fs::path& DataDirectories::cache(const fs::path& path)
     return _cache;
 }
 
+const fs::path& DataDirectories::downloads()
+{
+    if (_downloads.empty()) {
+        _downloads = known_folder_path(FOLDERID_Downloads);
+        if (_downloads.empty()) {
+            _downloads = known_folder_path(FOLDERID_Profile) / "Downloads";
+        }
+    }
+    return _downloads;
+}
+const fs::path& DataDirectories::downloads(const fs::path& path)
+{
+    _downloads = path;
+    return _downloads;
+}
+
 const fs::path& DataDirectories::global()
 {
     if (_global.empty())

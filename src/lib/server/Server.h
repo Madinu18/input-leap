@@ -21,6 +21,7 @@
 #include "server/Config.h"
 #include "inputleap/clipboard_types.h"
 #include "inputleap/Clipboard.h"
+#include "inputleap/FileTransfer.h"
 #include "inputleap/ScreenshotStore.h"
 #include "inputleap/key_types.h"
 #include "inputleap/mouse_types.h"
@@ -163,6 +164,19 @@ public:
     void on_screenshot_received(const std::string& client_name,
                                 const std::string& png_data);
 
+    //! A client announced that it understands file transfers.
+    void on_file_transfer_capable(BaseClientProxy* client);
+
+    //! File transfer messages received from a client.
+    void on_file_offer(BaseClientProxy* client, std::uint32_t id,
+                       std::uint32_t size, const std::string& name);
+    void on_file_data(BaseClientProxy* client, std::uint32_t id,
+                      std::uint8_t mark, const std::string& data);
+    void on_file_transfer_accept(std::uint32_t id);
+    void on_file_transfer_reject(std::uint32_t id, const std::string& reason);
+    void on_file_transfer_done(std::uint32_t id, bool success,
+                               const std::string& message);
+
     //! Store ClientListener pointer
     void setListener(ClientListener* p) { m_clientListener = p; }
 
@@ -238,6 +252,15 @@ private:
     // capture a screenshot on the primary screen or ask the active client
     bool handle_screenshot_hotkey(KeyID id, KeyModifierMask mask);
     void capture_primary_screenshot();
+
+    // file transfer helpers
+    void handle_transfer_drop_event(const Event& event);
+    void handle_transfer_send_offer_event(const Event& event);
+    void handle_transfer_send_chunk_event(const Event& event);
+    void handle_transfer_send_progress_event(const Event& event);
+    void handle_transfer_send_result_event(const Event& event);
+    void update_transfer_peers();
+    BaseClientProxy* get_transfer_neighbor(EDirection direction) const;
 
     // jump to screen
     void jumpToScreen(BaseClientProxy*);
@@ -519,6 +542,12 @@ private:
     // Key that started the current screenshot hotkey, so its release and
     // auto-repeats can be swallowed instead of leaking to the active screen.
     KeyID m_screenshotHotkey = kKeyNone;
+
+    // File transfer: one outgoing transfer at a time and one incoming one.
+    std::unique_ptr<FileTransferSender> m_transferSender;
+    FileTransferReceiver m_transferReceiver;
+    BaseClientProxy* m_transferTarget = nullptr;
+    BaseClientProxy* m_incomingTransferClient = nullptr;
 };
 
 } // namespace inputleap

@@ -277,6 +277,21 @@ enum class EventType : std::uint32_t {
     /// This event is sent whenever a screenshot chunk is transferred.
     SCREENSHOT_SENDING,
 
+    /// Files were dropped on a transfer line.
+    TRANSFER_FILES_DROPPED,
+
+    /// A file transfer is being offered to the peer.
+    TRANSFER_SEND_OFFER,
+
+    /// One file transfer data chunk is ready to be written to the stream.
+    TRANSFER_SEND_CHUNK,
+
+    /// Progress of the outgoing file transfer changed.
+    TRANSFER_SEND_PROGRESS,
+
+    /// An outgoing file transfer finished or failed.
+    TRANSFER_SEND_RESULT,
+
     /// This event is sent whenever a file chunk is transferred.
     FILE_CHUNK_SENDING,
 

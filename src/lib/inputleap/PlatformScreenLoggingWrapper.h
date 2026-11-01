@@ -44,6 +44,10 @@ public:
     bool isPrimary() const override;
     bool capture_screenshot(Screenshot& screenshot) override;
     bool can_capture_screenshot() const override;
+    void transfer_set_peers(const std::vector<EDirection>& edges) override;
+    void transfer_progress(const std::string& name, std::uint64_t done,
+                           std::uint64_t total, bool sending) override;
+    void transfer_finish(const std::string& message, bool success) override;
 
     std::string& getDraggingFilename() override;
     void clearDraggingFilename() override;

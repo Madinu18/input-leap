@@ -138,8 +138,20 @@ Server::Server(
 	}
 
     // install event handlers
+    m_transferSender = std::make_unique<FileTransferSender>(m_events, this);
     m_events->add_handler(EventType::TIMER, this,
                           [this](const auto& e){ handle_switch_wait_event(); });
+    m_events->add_handler(EventType::TRANSFER_FILES_DROPPED,
+                          m_screen->get_event_target(),
+                          [this](const auto& e){ handle_transfer_drop_event(e); });
+    m_events->add_handler(EventType::TRANSFER_SEND_OFFER, this,
+                          [this](const auto& e){ handle_transfer_send_offer_event(e); });
+    m_events->add_handler(EventType::TRANSFER_SEND_CHUNK, this,
+                          [this](const auto& e){ handle_transfer_send_chunk_event(e); });
+    m_events->add_handler(EventType::TRANSFER_SEND_PROGRESS, this,
+                          [this](const auto& e){ handle_transfer_send_progress_event(e); });
+    m_events->add_handler(EventType::TRANSFER_SEND_RESULT, this,
+                          [this](const auto& e){ handle_transfer_send_result_event(e); });
     m_events->add_handler(EventType::KEY_STATE_KEY_DOWN, &input_filter_,
                           [this](const auto& e){ handle_key_down_event(e); });
     m_events->add_handler(EventType::KEY_STATE_KEY_UP, &input_filter_,
@@ -270,6 +282,12 @@ Server::~Server()
     m_events->remove_handler(EventType::PRIMARY_SCREEN_FAKE_INPUT_BEGIN, &input_filter_);
     m_events->remove_handler(EventType::PRIMARY_SCREEN_FAKE_INPUT_END, &input_filter_);
     m_events->remove_handler(EventType::TIMER, this);
+    m_events->remove_handler(EventType::TRANSFER_FILES_DROPPED,
+                             m_screen->get_event_target());
+    m_events->remove_handler(EventType::TRANSFER_SEND_OFFER, this);
+    m_events->remove_handler(EventType::TRANSFER_SEND_CHUNK, this);
+    m_events->remove_handler(EventType::TRANSFER_SEND_PROGRESS, this);
+    m_events->remove_handler(EventType::TRANSFER_SEND_RESULT, this);
 	stopSwitch();
 
 	// force immediate disconnection of secondary clients
@@ -325,6 +343,8 @@ Server::setConfig(const Config& config)
 		BaseClientProxy* client = index->second;
 		sendOptions(client);
 	}
+
+	update_transfer_peers();
 
 	return true;
 }
@@ -1153,6 +1173,10 @@ Server::sendOptions(BaseClientProxy* client) const
 	optionsList.push_back(kOptionScreenshot);
 	optionsList.push_back(1);
 
+	// advertise line-based file transfer support.
+	optionsList.push_back(kOptionFileTransfer);
+	optionsList.push_back(1);
+
 	// send the options
 	client->resetOptions();
 	client->setOptions(optionsList);
@@ -1766,6 +1790,218 @@ void Server::capture_primary_screenshot()
     on_screenshot_received(getName(m_primaryClient), png);
 }
 
+namespace {
+
+EDirection opposite_direction(EDirection direction)
+{
+    switch (direction) {
+    case kLeft: return kRight;
+    case kRight: return kLeft;
+    case kTop: return kBottom;
+    case kBottom: return kTop;
+    default: return kNoDirection;
+    }
+}
+
+} // namespace
+
+BaseClientProxy* Server::get_transfer_neighbor(EDirection direction) const
+{
+    if (direction == kNoDirection) {
+        return nullptr;
+    }
+
+    std::int32_t ax = 0, ay = 0, aw = 0, ah = 0;
+    m_primaryClient->getShape(ax, ay, aw, ah);
+    std::int32_t x = ax + (aw >> 1);
+    std::int32_t y = ay + (ah >> 1);
+    BaseClientProxy* neighbor = getNeighbor(m_primaryClient, direction, x, y);
+    if (neighbor == nullptr || neighbor == m_primaryClient ||
+        !neighbor->supports_file_transfer()) {
+        return nullptr;
+    }
+    return neighbor;
+}
+
+void Server::update_transfer_peers()
+{
+    const EDirection directions[] = {kLeft, kRight, kTop, kBottom};
+
+    std::int32_t ax = 0, ay = 0, aw = 0, ah = 0;
+    m_primaryClient->getShape(ax, ay, aw, ah);
+    const std::int32_t centerX = ax + (aw >> 1);
+    const std::int32_t centerY = ay + (ah >> 1);
+
+    std::vector<EDirection> edges;
+    for (EDirection direction : directions) {
+        if (get_transfer_neighbor(direction) != nullptr) {
+            edges.push_back(direction);
+        }
+    }
+    m_screen->transfer_set_peers(edges);
+
+    for (auto& entry : m_clients) {
+        BaseClientProxy* client = entry.second;
+        if (client == m_primaryClient || !client->supports_file_transfer()) {
+            continue;
+        }
+
+        EDirection edge = kNoDirection;
+        for (EDirection direction : directions) {
+            std::int32_t x = centerX;
+            std::int32_t y = centerY;
+            if (getNeighbor(m_primaryClient, direction, x, y) == client) {
+                edge = opposite_direction(direction);
+                break;
+            }
+        }
+        client->send_file_transfer_edge(edge);
+    }
+}
+
+void Server::handle_transfer_drop_event(const Event& event)
+{
+    const auto& drop = event.get_data_as<TransferDrop>();
+    if (drop.files.empty()) {
+        return;
+    }
+
+    BaseClientProxy* target = get_transfer_neighbor(drop.edge);
+    if (target == nullptr) {
+        LOG_WARN("no file transfer peer on the selected edge");
+        return;
+    }
+
+    if (m_transferSender->busy()) {
+        LOG_WARN("a file transfer is already in progress");
+        m_screen->transfer_finish("Another transfer is already in progress", false);
+        return;
+    }
+
+    LOG_NOTE("offering %zd file(s) to \"%s\"",
+             drop.files.size(), getName(target).c_str());
+    m_transferTarget = target;
+    m_transferSender->enqueue_files(drop.files);
+}
+
+void Server::handle_transfer_send_offer_event(const Event& event)
+{
+    if (m_transferTarget == nullptr) {
+        return;
+    }
+    const auto& offer = event.get_data_as<FileTransferOffer>();
+    m_transferTarget->send_file_offer(offer.id, offer.size, offer.name);
+}
+
+void Server::handle_transfer_send_chunk_event(const Event& event)
+{
+    if (m_transferTarget == nullptr) {
+        return;
+    }
+    const auto& chunk = event.get_data_as<FileTransferChunk>();
+    m_transferTarget->send_file_data(chunk.id, chunk.mark, chunk.data);
+    if (chunk.mark == kDataChunk) {
+        m_transferSender->on_chunk_sent();
+    }
+}
+
+void Server::handle_transfer_send_progress_event(const Event& event)
+{
+    const auto& progress = event.get_data_as<FileTransferProgress>();
+    m_screen->transfer_progress(progress.name, progress.done, progress.total, true);
+}
+
+void Server::handle_transfer_send_result_event(const Event& event)
+{
+    const auto& result = event.get_data_as<FileTransferResult>();
+    if (result.success) {
+        LOG_NOTE("file transfer complete: %s", result.message.c_str());
+    }
+    else {
+        LOG_WARN("file transfer failed: %s", result.message.c_str());
+    }
+    m_screen->transfer_finish(result.message, result.success);
+}
+
+void Server::on_file_transfer_capable(BaseClientProxy* client)
+{
+    LOG_DEBUG1("client \"%s\" supports file transfer", getName(client).c_str());
+    update_transfer_peers();
+}
+
+void Server::on_file_offer(BaseClientProxy* client, std::uint32_t id,
+                           std::uint32_t size, const std::string& name)
+{
+    std::string error;
+    if (m_transferReceiver.active() ||
+        !m_transferReceiver.offer(id, size, name, error)) {
+        if (error.empty()) {
+            error = "Another file transfer is already in progress";
+        }
+        client->send_file_reject(id, error);
+        LOG_WARN("rejected file offer from \"%s\": %s",
+                 getName(client).c_str(), error.c_str());
+        return;
+    }
+
+    m_incomingTransferClient = client;
+    client->send_file_accept(id);
+    m_screen->transfer_progress(m_transferReceiver.name(), 0,
+                                m_transferReceiver.total(), false);
+    LOG_NOTE("receiving \"%s\" from \"%s\"",
+             m_transferReceiver.name().c_str(), getName(client).c_str());
+}
+
+void Server::on_file_data(BaseClientProxy* client, std::uint32_t id,
+                          std::uint8_t mark, const std::string& data)
+{
+    if (client != m_incomingTransferClient) {
+        LOG_WARN("file data from unexpected client \"%s\"", getName(client).c_str());
+        client->send_file_done(id, false, "Unexpected file transfer");
+        return;
+    }
+
+    std::string message;
+    const auto result = m_transferReceiver.data(id, mark, data, message);
+    if (result == FileTransferReceiver::Result::InProgress) {
+        if (m_transferReceiver.take_progress()) {
+            m_screen->transfer_progress(m_transferReceiver.name(),
+                                        m_transferReceiver.done(),
+                                        m_transferReceiver.total(), false);
+        }
+        return;
+    }
+
+    if (result == FileTransferReceiver::Result::Finished) {
+        client->send_file_done(id, true, message);
+        LOG_NOTE("saved received file to %s", message.c_str());
+        m_screen->transfer_finish("Saved to " + message, true);
+    }
+    else {
+        client->send_file_done(id, false, message);
+        LOG_ERR("file transfer from \"%s\" failed: %s",
+                getName(client).c_str(), message.c_str());
+        m_screen->transfer_finish(message, false);
+    }
+    m_incomingTransferClient = nullptr;
+}
+
+void Server::on_file_transfer_accept(std::uint32_t id)
+{
+    m_transferSender->on_accept(id);
+}
+
+void Server::on_file_transfer_reject(std::uint32_t id, const std::string& reason)
+{
+    m_transferSender->on_reject(id, reason);
+}
+
+void Server::on_file_transfer_done(std::uint32_t id, bool success,
+                                   const std::string& message)
+{
+    m_transferSender->on_done(id, success, message);
+}
+
 void
 Server::onMouseDown(ButtonID id)
 {
@@ -2211,6 +2447,16 @@ Server::removeClient(BaseClientProxy* client)
 	// remove from list
 	m_clients.erase(getName(client));
 	m_clientSet.erase(i);
+
+	if (client == m_transferTarget) {
+		m_transferSender->cancel();
+		m_transferTarget = nullptr;
+	}
+	if (client == m_incomingTransferClient) {
+		m_transferReceiver.abort();
+		m_incomingTransferClient = nullptr;
+	}
+	update_transfer_peers();
 
 	return true;
 }
