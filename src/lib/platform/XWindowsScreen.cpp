@@ -2274,7 +2274,7 @@ XWindowsScreen::selectXIRawMotion()
 	mask.mask_len = XIMaskLen(XI_RawMotion);
     mask.mask = static_cast<unsigned char*>(calloc(mask.mask_len, sizeof(char)));
 	mask.deviceid = XIAllMasterDevices;
-	memset(mask.mask, 0, 2);
+	memset(mask.mask, 0, mask.mask_len);
     XISetMask(mask.mask, XI_RawKeyRelease);
     XISetMask(mask.mask, XI_RawButtonPress);
     XISetMask(mask.mask, XI_RawButtonRelease);
