@@ -129,7 +129,8 @@ using inputleap::OSXTransferOverlay;
 - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender
 {
     NSPasteboard* pasteboard = [sender draggingPasteboard];
-    if ([pasteboard availableTypeFromArray:@[NSFilenamesPboardType]] == nil) {
+    if ([pasteboard availableTypeFromArray:
+            @[NSFilenamesPboardType, NSURLPboardType]] == nil) {
         return NSDragOperationNone;
     }
     glowing_ = YES;
@@ -159,15 +160,23 @@ using inputleap::OSXTransferOverlay;
 {
     NSPasteboard* pasteboard = [sender draggingPasteboard];
     NSArray* files = [pasteboard propertyListForType:NSFilenamesPboardType];
-    if (files == nil) {
-        return NO;
-    }
 
     std::vector<std::string> paths;
-    for (NSString* file in files) {
-        const std::string path = inputleap::utf8(file);
-        if (!path.empty()) {
-            paths.push_back(path);
+    if (files != nil) {
+        for (NSString* file in files) {
+            const std::string path = inputleap::utf8(file);
+            if (!path.empty()) {
+                paths.push_back(path);
+            }
+        }
+    }
+    else {
+        NSURL* url = [NSURL URLFromPasteboard:pasteboard];
+        if (url != nil && [url isFileURL]) {
+            const std::string path = inputleap::utf8([url path]);
+            if (!path.empty()) {
+                paths.push_back(path);
+            }
         }
     }
 
@@ -434,7 +443,7 @@ OSXTransferOverlay::OSXTransferOverlay(IEventQueue* events,
         [view setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
         [view setOverlay:this];
         [view setDirection:direction];
-        [view registerForDraggedTypes:@[NSFilenamesPboardType]];
+        [view registerForDraggedTypes:@[NSFilenamesPboardType, NSURLPboardType]];
         [window setContentView:view];
         [view release];
         [window orderOut:nil];
