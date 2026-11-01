@@ -117,21 +117,22 @@ public:
     HRESULT STDMETHODCALLTYPE DragEnter(IDataObject* data, DWORD, POINTL,
                                         DWORD* effect) override
     {
-        const bool accept = has_files(data);
-        overlay_->set_glow(direction_, accept);
-        *effect = accept ? DROPEFFECT_COPY : DROPEFFECT_NONE;
+        accepted_ = has_files(data);
+        overlay_->set_glow(direction_, accepted_);
+        *effect = accepted_ ? DROPEFFECT_COPY : DROPEFFECT_NONE;
         return S_OK;
     }
 
     HRESULT STDMETHODCALLTYPE DragOver(DWORD, POINTL, DWORD* effect) override
     {
-        overlay_->set_glow(direction_, true);
-        *effect = DROPEFFECT_COPY;
+        overlay_->set_glow(direction_, accepted_);
+        *effect = accepted_ ? DROPEFFECT_COPY : DROPEFFECT_NONE;
         return S_OK;
     }
 
     HRESULT STDMETHODCALLTYPE DragLeave() override
     {
+        accepted_ = false;
         overlay_->set_glow(direction_, false);
         return S_OK;
     }
@@ -144,7 +145,8 @@ public:
             read_files(data, files);
         }
         overlay_->set_glow(direction_, false);
-        const bool accepted = !files.empty();
+        const bool accepted = accepted_ && !files.empty();
+        accepted_ = false;
         if (accepted) {
             overlay_->drop_files(direction_, std::move(files));
         }
@@ -185,6 +187,7 @@ private:
     }
 
     LONG references_ = 1;
+    bool accepted_ = false;
     MSWindowsTransferOverlay* overlay_;
     EDirection direction_;
 };
