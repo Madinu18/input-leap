@@ -404,6 +404,9 @@ OSXTransferOverlay::OSXTransferOverlay(IEventQueue* events,
     impl_->events = events;
     impl_->target = target;
 
+    // Make sure AppKit is initialized before creating the overlay windows.
+    (void)[NSApplication sharedApplication];
+
     for (int i = 0; i < 4; ++i) {
         EDirection direction = i == 0 ? kLeft : i == 1 ? kRight
             : i == 2 ? kTop : kBottom;

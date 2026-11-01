@@ -214,7 +214,7 @@ MSWindowsTransferOverlay::~MSWindowsTransferOverlay()
         progress_window_ = nullptr;
     }
     if (window_class_ != 0) {
-        UnregisterClassW(MAKEINTATOM(window_class_), instance_);
+        UnregisterClassW(L"InputLeapTransferOverlay", instance_);
     }
 }
 
@@ -253,7 +253,7 @@ void MSWindowsTransferOverlay::create_windows()
     window_class.cbSize = sizeof(window_class);
     window_class.lpfnWndProc = &MSWindowsTransferOverlay::window_proc;
     window_class.hInstance = instance_;
-    window_class.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    window_class.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
     window_class.lpszClassName = L"InputLeapTransferOverlay";
     window_class_ = RegisterClassExW(&window_class);
 
@@ -267,7 +267,7 @@ void MSWindowsTransferOverlay::create_windows()
 
     for (EdgeWindow& edge : edges_) {
         edge.window = CreateWindowExW(
-            ex_style, MAKEINTATOM(window_class_), L"InputLeap transfer line",
+            ex_style, L"InputLeapTransferOverlay", L"InputLeap transfer line",
             WS_POPUP, 0, 0, 1, 1, nullptr, nullptr, instance_, nullptr);
         if (edge.window == nullptr) {
             continue;
@@ -481,25 +481,25 @@ void MSWindowsTransferOverlay::update_visible()
 void MSWindowsTransferOverlay::update_glow()
 {
     for (EdgeWindow& edge : edges_) {
-        bool near = false;
+        bool is_near = false;
         switch (edge.direction) {
         case kLeft:
-            near = last_x_ - screen_x_ <= kDropZone;
+            is_near = last_x_ - screen_x_ <= kDropZone;
             break;
         case kRight:
-            near = (screen_x_ + screen_width_ - 1) - last_x_ <= kDropZone;
+            is_near = (screen_x_ + screen_width_ - 1) - last_x_ <= kDropZone;
             break;
         case kTop:
-            near = last_y_ - screen_y_ <= kDropZone;
+            is_near = last_y_ - screen_y_ <= kDropZone;
             break;
         case kBottom:
-            near = (screen_y_ + screen_height_ - 1) - last_y_ <= kDropZone;
+            is_near = (screen_y_ + screen_height_ - 1) - last_y_ <= kDropZone;
             break;
         default:
             break;
         }
 
-        const bool glowing = edge.visible && dragging_ && near;
+        const bool glowing = edge.visible && dragging_ && is_near;
         if (glowing != edge.glowing) {
             edge.glowing = glowing;
             render_edge(edge);
@@ -622,7 +622,7 @@ void MSWindowsTransferOverlay::create_progress_window()
     progress_window_ = CreateWindowExW(
         WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW |
             WS_EX_NOACTIVATE | WS_EX_TOPMOST,
-        MAKEINTATOM(window_class_), L"InputLeap transfer progress",
+        L"InputLeapTransferOverlay", L"InputLeap transfer progress",
         WS_POPUP, 0, 0, kProgressWidth, kProgressHeight,
         nullptr, nullptr, instance_, nullptr);
 
