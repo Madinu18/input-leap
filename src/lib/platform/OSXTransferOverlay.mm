@@ -290,10 +290,10 @@ struct OSXTransferOverlay::Impl {
     IEventQueue* events = nullptr;
     const EventTarget* target = nullptr;
 
-    NSWindow* lineWindows[4] = {nil, nil, nil, nil};
-    ILTransferLineView* lineViews[4] = {nil, nil, nil, nil};
-    NSWindow* progressWindow = nil;
-    ILTransferProgressView* progressView = nil;
+    NSWindow* lineWindows[4] = {nullptr, nullptr, nullptr, nullptr};
+    ILTransferLineView* lineViews[4] = {nullptr, nullptr, nullptr, nullptr};
+    NSWindow* progressWindow = nullptr;
+    ILTransferProgressView* progressView = nullptr;
 
     std::vector<EDirection> peers;
     int x = 0;
@@ -311,16 +311,16 @@ struct OSXTransferOverlay::Impl {
     ~Impl()
     {
         for (int i = 0; i < 4; ++i) {
-            if (lineWindows[i] != nil) {
+            if (lineWindows[i] != nullptr) {
                 [lineWindows[i] orderOut:nil];
                 [lineWindows[i] release];
-                lineWindows[i] = nil;
+                lineWindows[i] = nullptr;
             }
         }
-        if (progressWindow != nil) {
+        if (progressWindow != nullptr) {
             [progressWindow orderOut:nil];
             [progressWindow release];
-            progressWindow = nil;
+            progressWindow = nullptr;
         }
     }
 
@@ -361,12 +361,12 @@ struct OSXTransferOverlay::Impl {
         };
 
         for (int i = 0; i < 4; ++i) {
-            if (lineWindows[i] != nil) {
+            if (lineWindows[i] != nullptr) {
                 [lineWindows[i] setFrame:frames[i] display:YES];
             }
         }
 
-        if (progressWindow != nil) {
+        if (progressWindow != nullptr) {
             [progressWindow setFrame:NSMakeRect(
                 appkitX + (width - inputleap::kProgressWidth) / 2,
                 appkitBottom + height - std::max(48, height / 8) -
@@ -379,7 +379,7 @@ struct OSXTransferOverlay::Impl {
     void update_visible()
     {
         for (int i = 0; i < 4; ++i) {
-            if (lineWindows[i] == nil) {
+            if (lineWindows[i] == nullptr) {
                 continue;
             }
             EDirection direction = i == 0 ? kLeft : i == 1 ? kRight

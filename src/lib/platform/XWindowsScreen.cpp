@@ -1713,7 +1713,7 @@ XWindowsScreen::onMousePress(const XButtonEvent& xbutton)
                   create_event_data<ButtonInfo>(ButtonInfo{button, mask}));
 	}
 
-    if (m_transferOverlay && button == kButtonLeft) {
+    if (m_transferOverlay && m_isOnScreen && button == kButtonLeft) {
         m_transferOverlay->button_down(xbutton.x_root, xbutton.y_root);
     }
 }
@@ -1749,7 +1749,7 @@ XWindowsScreen::onMouseRelease(const XButtonEvent& xbutton)
                   create_event_data<WheelInfo>(WheelInfo{120, 0}));
 	}
 
-    if (m_transferOverlay && button == kButtonLeft) {
+    if (m_transferOverlay && m_isOnScreen && button == kButtonLeft) {
         m_transferOverlay->button_up();
     }
 }
