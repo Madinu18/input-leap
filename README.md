@@ -121,6 +121,14 @@ working as before. See
 [doc/cross-device-screenshots.md](doc/cross-device-screenshots.md) for the
 storage locations, retention rules and platform notes.
 
+## Cross-device file transfer
+
+While dragging a file, InputLeap shows a line on each screen edge that faces
+another machine. Move the file onto the line and drop it: the file is sent to
+the other machine's Downloads folder, and a small progress window appears on
+both sides. Transfers work from server to client and from client to server.
+See [doc/file-transfer.md](doc/file-transfer.md) for the details.
+
 ## FAQ - Frequently Asked Questions
 
 **Q: Input Leap vs. barrier?**
@@ -182,6 +190,11 @@ Changes in this fork on top of upstream Input Leap, newest first.
 
 ### Unreleased
 
+- **feat: cross-device file transfer**
+  Dragging files onto the glowing screen-edge line sends them to the
+  neighbouring machine's Downloads folder. Transfers work in both directions,
+  verify the final size, avoid overwriting existing files and show progress on
+  both machines. See [doc/file-transfer.md](doc/file-transfer.md).
 - **feat: cross-device screenshots**
   Pressing `PrintScreen` (or `Win+Shift+S` / `Command+Shift+3`) now captures
   the active screen, transfers the PNG from the client to the server and

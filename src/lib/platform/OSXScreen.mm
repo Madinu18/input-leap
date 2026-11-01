@@ -28,6 +28,7 @@
 #include "platform/OSXDragSimulator.h"
 #include "platform/OSXMediaKeySupport.h"
 #include "platform/OSXPasteboardPeeker.h"
+#include "platform/OSXTransferOverlay.h"
 #include "inputleap/Clipboard.h"
 #include "inputleap/KeyMap.h"
 #include "inputleap/ClientApp.h"
@@ -165,6 +166,9 @@ OSXScreen::OSXScreen(IEventQueue* events, bool isPrimary, bool autoShowHideCurso
 	m_events->add_handler(EventType::SYSTEM, m_events->getSystemTarget(),
                           [this](const auto& e){ handle_system_event(e); });
 
+    m_transferOverlay = std::make_unique<OSXTransferOverlay>(m_events, this);
+    m_transferOverlay->set_geometry(m_x, m_y, m_w, m_h);
+
 	// install the platform event queue
     m_events->set_buffer(std::make_unique<OSXEventQueueBuffer>(m_events));
 }
@@ -174,6 +178,7 @@ OSXScreen::~OSXScreen()
 	disable();
     m_events->set_buffer(nullptr);
     m_events->remove_handler(EventType::SYSTEM, m_events->getSystemTarget());
+    m_transferOverlay.reset();
 
 	if (m_pmWatchThread) {
 		// make sure the thread has setup the runloop.
@@ -599,6 +604,15 @@ OSXScreen::fakeMouseButton(ButtonID id, bool press)
 
     CFRelease(event);
 
+    if (m_transferOverlay && id == kButtonLeft) {
+        if (press) {
+            m_transferOverlay->button_down(m_xCursor, m_yCursor);
+        }
+        else {
+            m_transferOverlay->button_up();
+        }
+    }
+
 	if (!press && (id == kButtonLeft)) {
 		if (m_fakeDraggingStarted) {
             m_getDropTargetThread = new Thread([this](){ get_drop_target_thread(); });
@@ -662,6 +676,10 @@ void OSXScreen::fakeMouseMove(std::int32_t x, std::int32_t y)
     m_xCursor = static_cast<std::int32_t>(pos.x);
     m_yCursor = static_cast<std::int32_t>(pos.y);
 	m_cursorPosValid = true;
+
+    if (m_transferOverlay) {
+        m_transferOverlay->motion(m_xCursor, m_yCursor);
+    }
 }
 
 void OSXScreen::fakeMouseRelativeMove(std::int32_t dx, std::int32_t dy) const
@@ -686,6 +704,11 @@ void OSXScreen::fakeMouseRelativeMove(std::int32_t dx, std::int32_t dy) const
 
 	// we now assume we don't know the current cursor position
 	m_cursorPosValid = false;
+
+    if (m_transferOverlay) {
+        m_transferOverlay->motion(static_cast<std::int32_t>(pos.x),
+                                  static_cast<std::int32_t>(pos.y));
+    }
 }
 
 void OSXScreen::fakeMouseWheel(std::int32_t xDelta, std::int32_t yDelta) const
@@ -889,6 +912,10 @@ OSXScreen::canLeave()
 void
 OSXScreen::leave()
 {
+    if (m_transferOverlay) {
+        m_transferOverlay->hide_lines();
+    }
+
     hideCursor();
 
 	if (isDraggingStarted()) {
@@ -984,6 +1011,30 @@ void
 OSXScreen::setOptions(const OptionsList&)
 {
 	// no options
+}
+
+void OSXScreen::transfer_set_peers(const std::vector<EDirection>& edges)
+{
+    if (m_transferOverlay) {
+        m_transferOverlay->set_peers(edges);
+    }
+}
+
+void OSXScreen::transfer_progress(const std::string& name,
+                                  std::uint64_t done,
+                                  std::uint64_t total,
+                                  bool sending)
+{
+    if (m_transferOverlay) {
+        m_transferOverlay->show_progress(name, done, total, sending);
+    }
+}
+
+void OSXScreen::transfer_finish(const std::string& message, bool success)
+{
+    if (m_transferOverlay) {
+        m_transferOverlay->finish_progress(message, success);
+    }
 }
 
 void OSXScreen::setSequenceNumber(std::uint32_t seqNum)
@@ -1102,6 +1153,10 @@ OSXScreen::onMouseMove(CGFloat mx, CGFloat my)
     m_xCursor = (std::int32_t)mx;
     m_yCursor = (std::int32_t)my;
 
+    if (m_transferOverlay && m_isOnScreen) {
+        m_transferOverlay->motion(m_xCursor, m_yCursor);
+    }
+
 	if (m_isOnScreen) {
 		// motion on primary screen
         sendEvent(EventType::PRIMARY_SCREEN_MOTION_ON_PRIMARY,
@@ -1203,6 +1258,15 @@ bool OSXScreen::onMouseButton(bool pressed, std::uint16_t macButton)
 
 			m_draggingStarted = false;
 		}
+
+        if (m_transferOverlay && m_isOnScreen) {
+            if (pressed) {
+                m_transferOverlay->button_down(m_xCursor, m_yCursor);
+            }
+            else {
+                m_transferOverlay->button_up();
+            }
+        }
 	}
 
 	return true;
@@ -1573,6 +1637,10 @@ OSXScreen::updateScreenShape()
 	delete[] displays;
 	// We want to notify the peer screen whether we are primary screen or not
     sendEvent(EventType::SCREEN_SHAPE_CHANGED);
+
+    if (m_transferOverlay) {
+        m_transferOverlay->set_geometry(m_x, m_y, m_w, m_h);
+    }
 
 	LOG_DEBUG("screen shape: center=%d,%d size=%dx%d on %u %s",
          m_x, m_y, m_w, m_h, displayCount,

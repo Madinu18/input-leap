@@ -27,6 +27,7 @@
 #include <X11/Xlib.h>
 
 #include <set>
+#include <memory>
 #include <vector>
 
 namespace inputleap {
@@ -34,6 +35,7 @@ namespace inputleap {
 class XWindowsClipboard;
 class XWindowsKeyState;
 class XWindowsScreenSaver;
+class XWindowsTransferOverlay;
 
 //! Implementation of IPlatformScreen for X11
 class XWindowsScreen : public PlatformScreen {
@@ -87,6 +89,10 @@ public:
     void setOptions(const OptionsList& options) override;
     void setSequenceNumber(std::uint32_t) override;
     bool isPrimary() const override;
+    void transfer_set_peers(const std::vector<EDirection>& edges) override;
+    void transfer_progress(const std::string& name, std::uint64_t done,
+                           std::uint64_t total, bool sending) override;
+    void transfer_finish(const std::string& message, bool success) override;
 
 protected:
     // IPlatformScreen overrides
@@ -262,6 +268,7 @@ private:
 
     IEventQueue* m_events;
     inputleap::KeyMap m_keyMap;
+    std::unique_ptr<XWindowsTransferOverlay> m_transferOverlay;
 
     // pointer to (singleton) screen.  this is only needed by
     // ioErrorHandler().

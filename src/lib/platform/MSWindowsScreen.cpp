@@ -20,6 +20,7 @@
 #include "platform/MSWindowsScreen.h"
 
 #include "platform/MSWindowsDropTarget.h"
+#include "platform/MSWindowsTransferOverlay.h"
 #include "client/Client.h"
 #include "platform/MSWindowsClipboard.h"
 #include "platform/MSWindowsDesks.h"
@@ -145,6 +146,8 @@ MSWindowsScreen::MSWindowsScreen(
         m_dropWindow = createDropWindow(m_class, "DropWindow");
         m_dropTarget = new MSWindowsDropTarget();
         RegisterDragDrop(m_dropWindow, m_dropTarget);
+        m_transferOverlay = std::make_unique<MSWindowsTransferOverlay>(
+            s_windowInstance, m_events, this);
     }
     catch (...) {
         delete m_keyState;
@@ -179,6 +182,7 @@ MSWindowsScreen::~MSWindowsScreen()
 
     RevokeDragDrop(m_dropWindow);
     m_dropTarget->Release();
+    m_transferOverlay.reset();
     OleUninitialize();
     destroyWindow(m_dropWindow);
 
@@ -234,6 +238,10 @@ MSWindowsScreen::enable()
 void
 MSWindowsScreen::disable()
 {
+    if (m_transferOverlay) {
+        m_transferOverlay->hide_lines();
+    }
+
     // stop tracking the active desk
     m_desks->disable();
 
@@ -315,6 +323,10 @@ bool MSWindowsScreen::canLeave() {
 
 void MSWindowsScreen::leave()
 {
+    if (m_transferOverlay) {
+        m_transferOverlay->hide_lines();
+    }
+
     // get keyboard layout of foreground window.  we'll use this
     // keyboard layout for translating keys sent to clients.
     HWND window  = GetForegroundWindow();
@@ -800,6 +812,17 @@ MSWindowsScreen::fakeMouseButton(ButtonID id, bool press)
             m_fakeDraggingStarted = false;
             m_draggingStarted = false;
         }
+
+        if (m_transferOverlay) {
+            if (press) {
+                POINT position{};
+                GetCursorPos(&position);
+                m_transferOverlay->button_down(position.x, position.y);
+            }
+            else {
+                m_transferOverlay->button_up();
+            }
+        }
     }
 }
 
@@ -808,6 +831,9 @@ void MSWindowsScreen::fakeMouseMove(std::int32_t x, std::int32_t y)
     m_desks->fakeMouseMove(x, y);
     if (m_buttons[kButtonLeft]) {
         m_draggingStarted = true;
+    }
+    if (m_transferOverlay) {
+        m_transferOverlay->motion(x + m_x, y + m_y);
     }
 }
 
@@ -1365,6 +1391,15 @@ MSWindowsScreen::onMouseButton(WPARAM wParam, LPARAM lParam)
         }
     }
 
+    if (m_transferOverlay && m_isOnScreen && button == kButtonLeft) {
+        if (pressed) {
+            m_transferOverlay->button_down(m_xCursor, m_yCursor);
+        }
+        else {
+            m_transferOverlay->button_up();
+        }
+    }
+
     return true;
 }
 
@@ -1395,6 +1430,10 @@ bool MSWindowsScreen::onMouseMove(std::int32_t mx, std::int32_t my)
 
     // save position to compute delta of next motion
     saveMousePosition(mx, my);
+
+    if (m_transferOverlay && m_isOnScreen) {
+        m_transferOverlay->motion(m_xCursor, m_yCursor);
+    }
 
     if (m_isOnScreen) {
 
@@ -1631,6 +1670,10 @@ MSWindowsScreen::updateScreenShape()
 
     // tell the desks
     m_desks->setShape(m_x, m_y, m_w, m_h, m_xCenter, m_yCenter, m_multimon);
+
+    if (m_transferOverlay) {
+        m_transferOverlay->set_geometry();
+    }
 }
 
 void MSWindowsScreen::handle_fixes()
@@ -1978,6 +2021,30 @@ void
 MSWindowsScreen::setDropTarget(const std::string& target)
 {
     m_dropTargetPath = target;
+}
+
+void MSWindowsScreen::transfer_set_peers(const std::vector<EDirection>& edges)
+{
+    if (m_transferOverlay) {
+        m_transferOverlay->set_peers(edges);
+    }
+}
+
+void MSWindowsScreen::transfer_progress(const std::string& name,
+                                        std::uint64_t done,
+                                        std::uint64_t total,
+                                        bool sending)
+{
+    if (m_transferOverlay) {
+        m_transferOverlay->show_progress(name, done, total, sending);
+    }
+}
+
+void MSWindowsScreen::transfer_finish(const std::string& message, bool success)
+{
+    if (m_transferOverlay) {
+        m_transferOverlay->finish_progress(message, success);
+    }
 }
 
 bool

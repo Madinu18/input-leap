@@ -23,6 +23,7 @@
 #include "platform/XWindowsEventQueueBuffer.h"
 #include "platform/XWindowsKeyState.h"
 #include "platform/XWindowsScreenSaver.h"
+#include "platform/XWindowsTransferOverlay.h"
 #include "platform/XWindowsUtil.h"
 #include "inputleap/Clipboard.h"
 #include "inputleap/KeyMap.h"
@@ -155,6 +156,10 @@ XWindowsScreen::XWindowsScreen(
         m_clipboard[id] = new XWindowsClipboard(m_impl, m_display, m_window, id);
 	}
 
+    m_transferOverlay = std::make_unique<XWindowsTransferOverlay>(
+        m_display, m_root, events, this);
+    m_transferOverlay->set_geometry(m_x, m_y, m_w, m_h);
+
 	// install event handlers
 	m_events->add_handler(EventType::SYSTEM, m_events->getSystemTarget(),
                           [this](const auto& e){ handle_system_event(e); });
@@ -171,6 +176,7 @@ XWindowsScreen::~XWindowsScreen()
 
     m_events->set_buffer(nullptr);
     m_events->remove_handler(EventType::SYSTEM, m_events->getSystemTarget());
+    m_transferOverlay.reset();
 	for (ClipboardID id = 0; id < kClipboardEnd; ++id) {
 		delete m_clipboard[id];
 	}
@@ -220,6 +226,10 @@ XWindowsScreen::enable()
 void
 XWindowsScreen::disable()
 {
+    if (m_transferOverlay) {
+        m_transferOverlay->hide_lines();
+    }
+
 	// release input context focus
     if (m_ic != nullptr) {
         m_impl->XUnsetICFocus(m_ic);
@@ -302,6 +312,10 @@ bool XWindowsScreen::canLeave()
 
 void XWindowsScreen::leave()
 {
+    if (m_transferOverlay) {
+        m_transferOverlay->hide_lines();
+    }
+
 	if (!m_isPrimary) {
 		// restore the previous keyboard auto-repeat state.  if the user
 		// changed the auto-repeat configuration while on the client then
@@ -630,6 +644,30 @@ bool XWindowsScreen::capture_screenshot(Screenshot& screenshot)
     return true;
 }
 
+void XWindowsScreen::transfer_set_peers(const std::vector<EDirection>& edges)
+{
+    if (m_transferOverlay) {
+        m_transferOverlay->set_peers(edges);
+    }
+}
+
+void XWindowsScreen::transfer_progress(const std::string& name,
+                                       std::uint64_t done,
+                                       std::uint64_t total,
+                                       bool sending)
+{
+    if (m_transferOverlay) {
+        m_transferOverlay->show_progress(name, done, total, sending);
+    }
+}
+
+void XWindowsScreen::transfer_finish(const std::string& message, bool success)
+{
+    if (m_transferOverlay) {
+        m_transferOverlay->finish_progress(message, success);
+    }
+}
+
 void XWindowsScreen::reconfigure(std::uint32_t)
 {
 	// do nothing
@@ -925,6 +963,15 @@ XWindowsScreen::fakeMouseButton(ButtonID button, bool press)
 							press ? True : False, CurrentTime);
         m_impl->XFlush(m_display);
 	}
+
+    if (m_transferOverlay && button == kButtonLeft) {
+        if (press) {
+            m_transferOverlay->button_down(m_xCursor, m_yCursor);
+        }
+        else {
+            m_transferOverlay->button_up();
+        }
+    }
 }
 
 void XWindowsScreen::fakeMouseMove(std::int32_t x, std::int32_t y)
@@ -937,6 +984,10 @@ void XWindowsScreen::fakeMouseMove(std::int32_t x, std::int32_t y)
 							x, y, CurrentTime);
 	}
     m_impl->XFlush(m_display);
+
+    if (m_transferOverlay) {
+        m_transferOverlay->motion(x, y);
+    }
 }
 
 void XWindowsScreen::fakeMouseRelativeMove(std::int32_t dx, std::int32_t dy) const
@@ -949,6 +1000,13 @@ void XWindowsScreen::fakeMouseRelativeMove(std::int32_t dx, std::int32_t dy) con
         m_impl->XTestFakeRelativeMotionEvent(m_display, dx, dy, CurrentTime);
 	}
     m_impl->XFlush(m_display);
+
+    if (m_transferOverlay) {
+        std::int32_t x = 0;
+        std::int32_t y = 0;
+        getCursorPos(x, y);
+        m_transferOverlay->motion(x, y);
+    }
 }
 
 void XWindowsScreen::fakeMouseWheel(std::int32_t xDelta, std::int32_t yDelta) const
@@ -1096,6 +1154,9 @@ XWindowsScreen::saveShape()
 			XFree(screens);
 		}
 	}
+    if (m_transferOverlay) {
+        m_transferOverlay->set_geometry(m_x, m_y, m_w, m_h);
+    }
 }
 
 Window
@@ -1248,6 +1309,10 @@ XWindowsScreen::handle_system_event(const Event& event)
     XEvent* xevent = event.get_data_as<XEvent*>();
     assert(xevent != nullptr);
 
+    if (m_transferOverlay) {
+        m_transferOverlay->handle_event(xevent);
+    }
+
 	// update key state
 	bool isRepeat = false;
 	if (m_isPrimary) {
@@ -1356,6 +1421,21 @@ XWindowsScreen::handle_system_event(const Event& event)
                     m_impl->XFreeEventData(m_display, cookie);
 					return;
 			}
+            if (cookie->evtype == XI_RawButtonPress ||
+                cookie->evtype == XI_RawButtonRelease) {
+                auto* raw = static_cast<XIRawEvent*>(cookie->data);
+                if (raw != nullptr && raw->detail == 1 && m_transferOverlay &&
+                    m_isOnScreen) {
+                    if (cookie->evtype == XI_RawButtonPress) {
+                        m_transferOverlay->button_down(m_xCursor, m_yCursor);
+                    }
+                    else {
+                        m_transferOverlay->button_up();
+                    }
+                }
+                m_impl->XFreeEventData(m_display, cookie);
+                return;
+            }
                 m_impl->XFreeEventData(m_display, cookie);
 		}
 	}
@@ -1632,6 +1712,10 @@ XWindowsScreen::onMousePress(const XButtonEvent& xbutton)
         sendEvent(EventType::PRIMARY_SCREEN_BUTTON_DOWN,
                   create_event_data<ButtonInfo>(ButtonInfo{button, mask}));
 	}
+
+    if (m_transferOverlay && button == kButtonLeft) {
+        m_transferOverlay->button_down(xbutton.x_root, xbutton.y_root);
+    }
 }
 
 void
@@ -1664,6 +1748,10 @@ XWindowsScreen::onMouseRelease(const XButtonEvent& xbutton)
         sendEvent(EventType::PRIMARY_SCREEN_WHEEL,
                   create_event_data<WheelInfo>(WheelInfo{120, 0}));
 	}
+
+    if (m_transferOverlay && button == kButtonLeft) {
+        m_transferOverlay->button_up();
+    }
 }
 
 void
@@ -1679,6 +1767,10 @@ XWindowsScreen::onMouseMove(const XMotionEvent& xmotion)
 	// save position to compute delta of next motion
 	m_xCursor = xmotion.x_root;
 	m_yCursor = xmotion.y_root;
+
+    if (m_transferOverlay && m_isOnScreen) {
+        m_transferOverlay->motion(m_xCursor, m_yCursor);
+    }
 
 	if (xmotion.send_event) {
 		// we warped the mouse.  discard events until we
@@ -2184,6 +2276,8 @@ XWindowsScreen::selectXIRawMotion()
 	mask.deviceid = XIAllMasterDevices;
 	memset(mask.mask, 0, 2);
     XISetMask(mask.mask, XI_RawKeyRelease);
+    XISetMask(mask.mask, XI_RawButtonPress);
+    XISetMask(mask.mask, XI_RawButtonRelease);
 	XISetMask(mask.mask, XI_RawMotion);
     m_impl->XISelectEvents(m_display, DefaultRootWindow(m_display), &mask, 1);
 	free(mask.mask);

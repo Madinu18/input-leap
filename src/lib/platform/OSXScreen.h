@@ -34,6 +34,7 @@
 #include <condition_variable>
 #include <bitset>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <vector>
 
@@ -48,6 +49,7 @@ extern "C" {
 class Thread;
 class OSXKeyState;
 class OSXScreenSaver;
+class OSXTransferOverlay;
 
 //! Implementation of IPlatformScreen for OS X
 class OSXScreen : public PlatformScreen {
@@ -99,6 +101,10 @@ public:
     virtual bool isPrimary() const;
     virtual void fakeDraggingFiles(DragFileList fileList);
     virtual std::string& getDraggingFilename();
+    void transfer_set_peers(const std::vector<EDirection>& edges) override;
+    void transfer_progress(const std::string& name, std::uint64_t done,
+                           std::uint64_t total, bool sending) override;
+    void transfer_finish(const std::string& message, bool success) override;
 
     const std::string& getDropTarget() const { return m_dropTarget; }
     void waitForCarbonLoop() const;
@@ -341,6 +347,8 @@ private:
     bool m_autoShowHideCursor;
 
     IEventQueue* m_events;
+
+    std::unique_ptr<OSXTransferOverlay> m_transferOverlay;
 
     Thread* m_getDropTargetThread;
     std::string m_dropTarget;

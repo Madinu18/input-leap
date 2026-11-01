@@ -25,7 +25,9 @@
 #include "inputleap/DragInformation.h"
 #include "platform/synwinhk.h"
 #include <map>
+#include <memory>
 #include <string>
+#include <vector>
 
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
@@ -37,6 +39,7 @@ class MSWindowsKeyState;
 class MSWindowsScreenSaver;
 class Thread;
 class MSWindowsDropTarget;
+class MSWindowsTransferOverlay;
 
 //! Implementation of IPlatformScreen for Microsoft Windows
 class MSWindowsScreen : public PlatformScreen {
@@ -124,6 +127,10 @@ public:
     virtual std::string& getDraggingFilename();
     virtual const std::string& getDropTarget() const;
     virtual void setDropTarget(const std::string&);
+    void transfer_set_peers(const std::vector<EDirection>& edges) override;
+    void transfer_progress(const std::string& name, std::uint64_t done,
+                           std::uint64_t total, bool sending) override;
+    void transfer_finish(const std::string& message, bool success) override;
 
 protected:
     // IPlatformScreen overrides
@@ -340,6 +347,8 @@ private:
     MSWindowsDropTarget* m_dropTarget;
     HWND m_dropWindow;
     const int m_dropWindowSize;
+
+    std::unique_ptr<MSWindowsTransferOverlay> m_transferOverlay;
 
     Thread* m_sendDragThread;
 
