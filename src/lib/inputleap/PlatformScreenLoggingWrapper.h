@@ -42,6 +42,7 @@ public:
     void setSequenceNumber(std::uint32_t) override;
     void setDraggingStarted(bool started) override;
     bool isPrimary() const override;
+    bool capture_screenshot(Screenshot& screenshot) override;
 
     std::string& getDraggingFilename() override;
     void clearDraggingFilename() override;

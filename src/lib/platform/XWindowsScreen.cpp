@@ -38,6 +38,8 @@
 #include <cstdlib>
 #include <algorithm>
 
+#include <X11/Xutil.h>
+
 #define SCROLL_LOCK_EXCLUDE_MASK 0xDFFF
 // To ignore scroll lock state for hotkeys, as it is used for alternate keyboard layout indication
 namespace inputleap {
@@ -490,6 +492,126 @@ void XWindowsScreen::getCursorPos(std::int32_t& x, std::int32_t& y) const
 		x = m_xCenter;
 		y = m_yCenter;
 	}
+}
+
+namespace {
+
+std::uint8_t scale_channel(unsigned long pixel, unsigned long mask)
+{
+    if (mask == 0) {
+        return 0;
+    }
+
+    unsigned int shift = 0;
+    while ((mask & 1ul) == 0) {
+        mask >>= 1;
+        ++shift;
+    }
+
+    const unsigned long value = (pixel >> shift) & mask;
+    return static_cast<std::uint8_t>((value * 255ul + mask / 2) / mask);
+}
+
+void fallback_channel_masks(int bits_per_pixel, unsigned long& red,
+                            unsigned long& green, unsigned long& blue)
+{
+    switch (bits_per_pixel) {
+    case 32:
+    case 24:
+        red = 0x00ff0000ul;
+        green = 0x0000ff00ul;
+        blue = 0x000000fful;
+        break;
+    case 16:
+        red = 0xf800ul;
+        green = 0x07e0ul;
+        blue = 0x001ful;
+        break;
+    case 15:
+        red = 0x7c00ul;
+        green = 0x03e0ul;
+        blue = 0x001ful;
+        break;
+    default:
+        red = green = blue = 0;
+        break;
+    }
+}
+
+} // namespace
+
+bool XWindowsScreen::capture_screenshot(Screenshot& screenshot)
+{
+    screenshot = Screenshot();
+
+    if (m_display == nullptr) {
+        screenshot.error = "no X11 display is available";
+        return false;
+    }
+
+    XWindowAttributes attributes;
+    if (XGetWindowAttributes(m_display, m_root, &attributes) == 0) {
+        screenshot.error = "could not query the X11 root window";
+        return false;
+    }
+
+    if (attributes.width <= 0 || attributes.height <= 0) {
+        screenshot.error = "the X11 root window has no usable size";
+        return false;
+    }
+
+    XImage* image = XGetImage(m_display, m_root, 0, 0,
+                              static_cast<unsigned int>(attributes.width),
+                              static_cast<unsigned int>(attributes.height),
+                              AllPlanes, ZPixmap);
+    if (image == nullptr) {
+        screenshot.error = "XGetImage failed";
+        return false;
+    }
+
+    unsigned long redMask = image->red_mask;
+    unsigned long greenMask = image->green_mask;
+    unsigned long blueMask = image->blue_mask;
+    if (redMask == 0 || greenMask == 0 || blueMask == 0) {
+        fallback_channel_masks(image->bits_per_pixel, redMask, greenMask, blueMask);
+    }
+
+    screenshot.width = image->width;
+    screenshot.height = image->height;
+    screenshot.rgb.resize(static_cast<std::size_t>(image->width) *
+                          static_cast<std::size_t>(image->height) * 3);
+
+    std::uint8_t* output = screenshot.rgb.data();
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    const bool direct32 = image->bits_per_pixel == 32 && image->byte_order == MSBFirst;
+#else
+    const bool direct32 = image->bits_per_pixel == 32 && image->byte_order == LSBFirst;
+#endif
+
+    for (int y = 0; y < image->height; ++y) {
+        const std::uint8_t* row =
+            reinterpret_cast<const std::uint8_t*>(image->data) +
+            static_cast<std::size_t>(y) * image->bytes_per_line;
+
+        for (int x = 0; x < image->width; ++x) {
+            unsigned long pixel;
+            if (direct32) {
+                std::uint32_t raw = 0;
+                std::memcpy(&raw, row + static_cast<std::size_t>(x) * 4, sizeof(raw));
+                pixel = raw;
+            }
+            else {
+                pixel = XGetPixel(image, x, y);
+            }
+
+            *output++ = scale_channel(pixel, redMask);
+            *output++ = scale_channel(pixel, greenMask);
+            *output++ = scale_channel(pixel, blueMask);
+        }
+    }
+
+    XDestroyImage(image);
+    return true;
 }
 
 void XWindowsScreen::reconfigure(std::uint32_t)

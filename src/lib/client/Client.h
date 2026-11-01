@@ -40,6 +40,7 @@ class ServerProxy;
 class IStream;
 class Thread;
 class FastPathClient;
+struct Screenshot;
 
 /// This class implements the top-level client algorithms for InputLeap.
 class Client : public IClient, public INode, public EventTarget {
@@ -94,6 +95,9 @@ public:
 
     //! Send dragging file information back to server
     void sendDragInfo(std::uint32_t fileCount, std::string& info, size_t size);
+
+    //! Capture the local screen for a server screenshot request
+    bool capture_screenshot(Screenshot& screenshot);
 
 
     //@}

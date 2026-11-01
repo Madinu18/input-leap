@@ -20,6 +20,7 @@
 
 #include "client/ServerProxy.h"
 #include "inputleap/Screen.h"
+#include "inputleap/Screenshot.h"
 #include "inputleap/FileChunk.h"
 #include "inputleap/DropHelper.h"
 #include "inputleap/PacketStreamFilter.h"
@@ -311,6 +312,15 @@ void
 Client::keyDown(KeyID id, KeyModifierMask mask, KeyButton button)
 {
      m_screen->keyDown(id, mask, button);
+}
+
+bool Client::capture_screenshot(Screenshot& screenshot)
+{
+    if (m_screen == nullptr) {
+        screenshot.error = "no local screen is available";
+        return false;
+    }
+    return m_screen->capture_screenshot(screenshot);
 }
 
 void Client::keyRepeat(KeyID id, KeyModifierMask mask, std::int32_t count, KeyButton button)

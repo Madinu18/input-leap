@@ -117,6 +117,14 @@ bool PlatformScreenLoggingWrapper::isPrimary() const
     return result;
 }
 
+bool PlatformScreenLoggingWrapper::capture_screenshot(Screenshot& screenshot)
+{
+    const bool result = screen_->capture_screenshot(screenshot);
+    LOG_DEBUG1("PlatformScreen::capture_screenshot() => %d (%dx%d)",
+               result, screenshot.width, screenshot.height);
+    return result;
+}
+
 std::string& PlatformScreenLoggingWrapper::getDraggingFilename()
 {
     auto& result = screen_->getDraggingFilename();

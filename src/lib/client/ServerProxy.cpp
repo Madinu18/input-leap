@@ -21,6 +21,8 @@
 #include "client/Client.h"
 #include "inputleap/FileChunk.h"
 #include "inputleap/ClipboardChunk.h"
+#include "inputleap/Screenshot.h"
+#include "inputleap/ScreenshotChunk.h"
 #include "inputleap/StreamChunker.h"
 #include "inputleap/Clipboard.h"
 #include "inputleap/ProtocolUtil.h"
@@ -69,6 +71,8 @@ ServerProxy::ServerProxy(Client* client, inputleap::IStream* stream, IEventQueue
                           [this](const auto& e){ handle_data(); });
     m_events->add_handler(EventType::CLIPBOARD_SENDING, this,
                           [this](const auto& e){ handle_clipboard_sending_event(e); });
+    m_events->add_handler(EventType::SCREENSHOT_SENDING, this,
+                          [this](const auto& e){ handle_screenshot_sending_event(e); });
 
     // send heartbeat
     setKeepAliveRate(kKeepAliveRate);
@@ -79,6 +83,7 @@ ServerProxy::~ServerProxy()
     setKeepAliveRate(-1.0);
     m_events->remove_handler(EventType::STREAM_INPUT_READY, m_stream->get_event_target());
     m_events->remove_handler(EventType::CLIPBOARD_SENDING, this);
+    m_events->remove_handler(EventType::SCREENSHOT_SENDING, this);
 }
 
 void
@@ -314,6 +319,9 @@ ServerProxy::EResult ServerProxy::parseMessage(const std::uint8_t* code)
     }
     else if (memcmp(code, kMsgDDragInfo, 4) == 0) {
         dragInfoReceived();
+    }
+    else if (memcmp(code, kMsgCScreenshotRequest, 4) == 0) {
+        screenshot();
     }
 
     else if (memcmp(code, kMsgCClose, 4) == 0) {
@@ -942,6 +950,48 @@ void ServerProxy::handle_clipboard_sending_event(const Event& event)
     const auto& chunk = event.get_data_as<ClipboardChunk>();
     ProtocolUtil::writef(m_stream, kMsgDClipboard, chunk.id_, chunk.sequence_, chunk.mark_,
                          &chunk.data_);
+}
+
+void ServerProxy::handle_screenshot_sending_event(const Event& event)
+{
+    ScreenshotChunk chunk = event.get_data_as<ScreenshotChunk>();
+    ProtocolUtil::writef(m_stream, kMsgDScreenshot, chunk.requestId_, chunk.mark_,
+                         &chunk.data_);
+}
+
+void ServerProxy::screenshot()
+{
+    std::uint32_t requestId = 0;
+    if (!ProtocolUtil::readf(m_stream, kMsgCScreenshotRequest + 4, &requestId)) {
+        return;
+    }
+
+    LOG_DEBUG1("server requested screenshot %u", requestId);
+
+    Screenshot image;
+    if (!m_client->capture_screenshot(image)) {
+        send_screenshot_failure(requestId,
+                                image.error.empty() ? "screen capture failed" : image.error);
+        return;
+    }
+
+    std::string png;
+    std::string error;
+    if (!encode_png(image, png, error)) {
+        send_screenshot_failure(requestId, error);
+        return;
+    }
+
+    StreamChunker::sendScreenshot(png, requestId, m_events, this);
+}
+
+void ServerProxy::send_screenshot_failure(std::uint32_t requestId,
+                                          const std::string& error)
+{
+    LOG_WARN("could not capture screenshot: %s", error.c_str());
+    std::string message = error;
+    ProtocolUtil::writef(m_stream, kMsgDScreenshot, requestId,
+                         static_cast<std::uint8_t>(kDataError), &message);
 }
 
 void ServerProxy::file_chunk_sending(const FileChunk& chunk)

@@ -42,6 +42,7 @@
 #include <AvailabilityMacros.h>
 #include <IOKit/hidsystem/event_status_driver.h>
 #include <AppKit/NSEvent.h>
+#include <CoreGraphics/CoreGraphics.h>
 
 namespace inputleap {
 
@@ -230,6 +231,63 @@ void OSXScreen::getCursorPos(std::int32_t& x, std::int32_t& y) const
 	m_xCursor        = x;
 	m_yCursor        = y;
 	CFRelease(event);
+}
+
+bool OSXScreen::capture_screenshot(Screenshot& screenshot)
+{
+    screenshot = Screenshot();
+
+    // Captures every display in one image. On macOS 10.15 and newer the
+    // caller must have granted the Screen Recording permission to
+    // Input Leap; without it the system returns a blank image.
+    CGImageRef image = CGWindowListCreateImage(
+        CGRectInfinite, kCGWindowListOptionOnScreenOnly, kCGNullWindowID,
+        kCGWindowImageBestResolution);
+    if (image == nullptr) {
+        screenshot.error =
+            "screen capture failed; grant Screen Recording permission to Input Leap";
+        return false;
+    }
+
+    const std::size_t width = CGImageGetWidth(image);
+    const std::size_t height = CGImageGetHeight(image);
+    if (width == 0 || height == 0 ||
+        width > static_cast<std::size_t>(INT32_MAX) ||
+        height > static_cast<std::size_t>(INT32_MAX)) {
+        CGImageRelease(image);
+        screenshot.error = "the captured image has an invalid size";
+        return false;
+    }
+
+    std::vector<std::uint8_t> rgba(width * height * 4);
+    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+    CGContextRef context = CGBitmapContextCreate(
+        rgba.data(), width, height, 8, width * 4, colorSpace,
+        kCGImageAlphaNoneSkipLast | kCGBitmapByteOrder32Big);
+    CGColorSpaceRelease(colorSpace);
+
+    if (context == nullptr) {
+        CGImageRelease(image);
+        screenshot.error = "could not create a bitmap context";
+        return false;
+    }
+
+    CGContextDrawImage(context, CGRectMake(0, 0, width, height), image);
+    CGContextRelease(context);
+    CGImageRelease(image);
+
+    screenshot.width = static_cast<std::int32_t>(width);
+    screenshot.height = static_cast<std::int32_t>(height);
+    screenshot.rgb.resize(width * height * 3);
+
+    std::uint8_t* output = screenshot.rgb.data();
+    for (std::size_t i = 0; i < width * height; ++i) {
+        *output++ = rgba[i * 4];
+        *output++ = rgba[i * 4 + 1];
+        *output++ = rgba[i * 4 + 2];
+    }
+
+    return true;
 }
 
 void OSXScreen::reconfigure(std::uint32_t)

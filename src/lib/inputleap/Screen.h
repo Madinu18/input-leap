@@ -302,6 +302,12 @@ public:
 
     IPlatformScreen* getPlatformScreen() { return m_screen.get(); }
 
+    //! Capture the screen
+    bool capture_screenshot(Screenshot& screenshot)
+    {
+        return m_screen->capture_screenshot(screenshot);
+    }
+
 protected:
     void enablePrimary();
     void enableSecondary();

@@ -516,6 +516,85 @@ void MSWindowsScreen::getCursorPos(std::int32_t& x, std::int32_t& y) const
     m_desks->getCursorPos(x, y);
 }
 
+bool MSWindowsScreen::capture_screenshot(Screenshot& screenshot)
+{
+    screenshot = Screenshot();
+
+    const int x = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    const int y = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    const int width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+    const int height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+    if (width <= 0 || height <= 0) {
+        screenshot.error = "the virtual screen has no usable size";
+        return false;
+    }
+
+    HDC screenDC = GetDC(nullptr);
+    if (screenDC == nullptr) {
+        screenshot.error = "GetDC failed";
+        return false;
+    }
+
+    HDC memoryDC = CreateCompatibleDC(screenDC);
+    if (memoryDC == nullptr) {
+        ReleaseDC(nullptr, screenDC);
+        screenshot.error = "CreateCompatibleDC failed";
+        return false;
+    }
+
+    BITMAPINFO info{};
+    info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth = width;
+    info.bmiHeader.biHeight = -height; // top-down
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+
+    void* bits = nullptr;
+    HBITMAP bitmap = CreateDIBSection(screenDC, &info, DIB_RGB_COLORS,
+                                      &bits, nullptr, 0);
+    if (bitmap == nullptr || bits == nullptr) {
+        DeleteDC(memoryDC);
+        ReleaseDC(nullptr, screenDC);
+        screenshot.error = "CreateDIBSection failed";
+        return false;
+    }
+
+    HGDIOBJ previous = SelectObject(memoryDC, bitmap);
+    const BOOL copied = BitBlt(memoryDC, 0, 0, width, height, screenDC,
+                               x, y, SRCCOPY | CAPTUREBLT);
+    SelectObject(memoryDC, previous);
+
+    if (copied) {
+        screenshot.width = width;
+        screenshot.height = height;
+        screenshot.rgb.resize(static_cast<std::size_t>(width) *
+                              static_cast<std::size_t>(height) * 3);
+
+        const auto* source = static_cast<const std::uint8_t*>(bits);
+        std::uint8_t* output = screenshot.rgb.data();
+        const std::size_t pixels = static_cast<std::size_t>(width) * height;
+        for (std::size_t i = 0; i < pixels; ++i) {
+            // The DIB uses BGRA byte order, the screenshot uses RGB.
+            *output++ = source[2];
+            *output++ = source[1];
+            *output++ = source[0];
+            source += 4;
+        }
+    }
+
+    DeleteObject(bitmap);
+    DeleteDC(memoryDC);
+    ReleaseDC(nullptr, screenDC);
+
+    if (!copied) {
+        screenshot.error = "BitBlt failed";
+        return false;
+    }
+
+    return true;
+}
+
 void MSWindowsScreen::reconfigure(std::uint32_t activeSides)
 {
     assert(m_isPrimary);

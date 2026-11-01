@@ -108,7 +108,10 @@ private:
     void infoAcknowledgment();
     void fileChunkReceived();
     void dragInfoReceived();
+    void screenshot();
+    void send_screenshot_failure(std::uint32_t requestId, const std::string& error);
     void handle_clipboard_sending_event(const Event&);
+    void handle_screenshot_sending_event(const Event&);
 
 private:
     typedef EResult (ServerProxy::*MessageParser)(const std::uint8_t*);

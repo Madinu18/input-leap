@@ -19,6 +19,7 @@
 #pragma once
 
 #include "inputleap/DragInformation.h"
+#include "inputleap/Screenshot.h"
 #include "inputleap/clipboard_types.h"
 #include "inputleap/IScreen.h"
 #include "inputleap/IPrimaryScreen.h"
@@ -137,6 +138,21 @@ public:
 
     //! Change dragging status
     virtual void setDraggingStarted(bool started) = 0;
+
+    //! Capture the screen
+    /*!
+    Captures the whole desktop into \c screenshot.  Returns false and sets
+    \c screenshot.error when the platform cannot capture the screen (for
+    example because Screen Recording permission was denied).
+    */
+    virtual bool capture_screenshot(Screenshot& screenshot)
+    {
+        screenshot.width = 0;
+        screenshot.height = 0;
+        screenshot.rgb.clear();
+        screenshot.error = "screenshot capture is not supported on this platform";
+        return false;
+    }
 
     //@}
     //! @name accessors
