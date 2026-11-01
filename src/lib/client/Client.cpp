@@ -208,8 +208,11 @@ Client::handshakeComplete()
 
     // The server advertises screenshot support through the SSUP option.
     // Announcing only when it did keeps us from sending unknown messages to
-    // older servers.
-    if (m_server != nullptr && m_server->screenshot_supported() && m_stream != nullptr) {
+    // older servers. Skip the announcement when this backend cannot capture
+    // the local screen, so the key keeps reaching the native screenshot tool.
+    if (m_server != nullptr && m_server->screenshot_supported() &&
+        m_screen != nullptr && m_screen->can_capture_screenshot() &&
+        m_stream != nullptr) {
         ProtocolUtil::writef(m_stream, kMsgCScreenshotCapable);
     }
 

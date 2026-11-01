@@ -88,6 +88,10 @@ public:
     void setSequenceNumber(std::uint32_t) override;
     bool isPrimary() const override;
 
+    // Wayland does not expose a synchronous full-desktop capture API. Native
+    // screenshots keep working through the compositor's own tool.
+    bool can_capture_screenshot() const override { return false; }
+
 protected:
     // IPlatformScreen overrides
     void handle_system_event(const Event& event) override;

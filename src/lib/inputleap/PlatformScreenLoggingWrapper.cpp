@@ -125,6 +125,13 @@ bool PlatformScreenLoggingWrapper::capture_screenshot(Screenshot& screenshot)
     return result;
 }
 
+bool PlatformScreenLoggingWrapper::can_capture_screenshot() const
+{
+    const bool result = screen_->can_capture_screenshot();
+    LOG_DEBUG1("PlatformScreen::can_capture_screenshot() => %d", result);
+    return result;
+}
+
 std::string& PlatformScreenLoggingWrapper::getDraggingFilename()
 {
     auto& result = screen_->getDraggingFilename();

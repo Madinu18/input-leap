@@ -154,6 +154,9 @@ public:
         return false;
     }
 
+    //! Return true if capture_screenshot() can work on this platform.
+    virtual bool can_capture_screenshot() const { return true; }
+
     //@}
     //! @name accessors
     //@{

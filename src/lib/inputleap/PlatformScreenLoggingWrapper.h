@@ -43,6 +43,7 @@ public:
     void setDraggingStarted(bool started) override;
     bool isPrimary() const override;
     bool capture_screenshot(Screenshot& screenshot) override;
+    bool can_capture_screenshot() const override;
 
     std::string& getDraggingFilename() override;
     void clearDraggingFilename() override;

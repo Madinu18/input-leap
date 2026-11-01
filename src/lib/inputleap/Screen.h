@@ -308,6 +308,11 @@ public:
         return m_screen->capture_screenshot(screenshot);
     }
 
+    bool can_capture_screenshot() const
+    {
+        return m_screen->can_capture_screenshot();
+    }
+
 protected:
     void enablePrimary();
     void enableSecondary();
