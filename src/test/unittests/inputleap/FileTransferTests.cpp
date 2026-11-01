@@ -66,6 +66,9 @@ TEST(FileTransferTests, sanitize_strips_directories_and_control_characters)
     EXPECT_EQ("file", sanitize_transfer_name(""));
     EXPECT_EQ("file", sanitize_transfer_name(".."));
     EXPECT_EQ("ab", sanitize_transfer_name(std::string("a\0b", 3)));
+    EXPECT_EQ("a_b.txt", sanitize_transfer_name("a:b.txt"));
+    EXPECT_EQ("trail", sanitize_transfer_name("trail... "));
+    EXPECT_EQ("_CON", sanitize_transfer_name("CON"));
 }
 
 TEST(FileTransferTests, unique_path_does_not_overwrite)

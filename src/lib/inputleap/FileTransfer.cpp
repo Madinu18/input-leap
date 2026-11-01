@@ -51,7 +51,18 @@ std::string sanitize_transfer_name(const std::string& name)
         if (c < 0x20 || c == 0x7f) {
             continue;
         }
-        result.push_back(static_cast<char>(c));
+        if (c == '<' || c == '>' || c == ':' || c == '"' ||
+            c == '|' || c == '?' || c == '*') {
+            result.push_back('_');
+        }
+        else {
+            result.push_back(static_cast<char>(c));
+        }
+    }
+
+    while (!result.empty() &&
+           (result.back() == '.' || result.back() == ' ')) {
+        result.pop_back();
     }
 
     if (result.empty() || result == "." || result == "..") {
@@ -60,6 +71,26 @@ std::string sanitize_transfer_name(const std::string& name)
     if (result.size() > 200) {
         result.resize(200);
     }
+
+    // Windows refuses to create these device names.
+    std::string stem = result;
+    const std::size_t dot = stem.find('.');
+    if (dot != std::string::npos) {
+        stem.resize(dot);
+    }
+    std::transform(stem.begin(), stem.end(), stem.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+    static const char* reserved[] = {
+        "CON", "PRN", "AUX", "NUL",
+        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"};
+    for (const char* name : reserved) {
+        if (stem == name) {
+            result.insert(result.begin(), '_');
+            break;
+        }
+    }
+
     return result;
 }
 
