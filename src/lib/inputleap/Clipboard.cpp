@@ -17,6 +17,7 @@
  */
 
 #include "inputleap/Clipboard.h"
+#include "inputleap/Screenshot.h"
 #include <cassert>
 
 namespace inputleap {
@@ -63,6 +64,18 @@ Clipboard::add(EFormat format, const std::string& data)
 
     m_data[format]  = data;
     m_added[format] = true;
+
+    // Keep a PNG version of every bitmap. Windows only carries CF_DIB, so
+    // the PNG would otherwise be lost when the clipboard is read back,
+    // leaving X11 and macOS clients with image/bmp only.
+    if (format == kBitmap && !m_added[kPNG]) {
+        std::string png;
+        std::string error;
+        if (bmp_to_png(data, png, error)) {
+            m_data[kPNG] = png;
+            m_added[kPNG] = true;
+        }
+    }
 }
 
 bool

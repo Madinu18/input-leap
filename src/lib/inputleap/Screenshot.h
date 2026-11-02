@@ -53,4 +53,7 @@ BITMAPINFOHEADER followed by 32bpp BI_RGB pixels), which is the layout
 bool decode_png_to_clipboard_bitmap(const std::string& png, std::string& bitmap,
                                     std::string& error);
 
+//! Encode the internal clipboard bitmap format as PNG.
+bool bmp_to_png(const std::string& bitmap, std::string& png, std::string& error);
+
 } // namespace inputleap
