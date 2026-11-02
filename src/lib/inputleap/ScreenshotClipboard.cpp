@@ -34,6 +34,12 @@ void put_u32(std::string& out, std::uint32_t value)
     out.push_back(static_cast<char>((value >> 24) & 0xff));
 }
 
+void put_u16(std::string& out, std::uint16_t value)
+{
+    out.push_back(static_cast<char>(value & 0xff));
+    out.push_back(static_cast<char>((value >> 8) & 0xff));
+}
+
 } // namespace
 
 bool decode_png_to_clipboard_bitmap(const std::string& png, std::string& bitmap,
@@ -73,8 +79,8 @@ bool decode_png_to_clipboard_bitmap(const std::string& png, std::string& bitmap,
     put_u32(bitmap, 40);                                   // biSize
     put_u32(bitmap, static_cast<std::uint32_t>(width));    // biWidth
     put_u32(bitmap, static_cast<std::uint32_t>(height));   // biHeight (bottom-up)
-    put_u32(bitmap, 1);                                    // biPlanes
-    put_u32(bitmap, 32);                                   // biBitCount
+    put_u16(bitmap, 1);                                    // biPlanes
+    put_u16(bitmap, 32);                                   // biBitCount
     put_u32(bitmap, 0);                                    // biCompression (BI_RGB)
     put_u32(bitmap, image_size);                           // biSizeImage
     put_u32(bitmap, 0);                                    // biXPelsPerMeter
