@@ -2687,6 +2687,8 @@ void Server::publish_screenshot_to_clipboard(const std::string& png_data)
 
     Clipboard clipboard;
     clipboard.add(IClipboard::kBitmap, bitmap);
+    // Clients on X11 and macOS paste image/png; keep the original PNG too.
+    clipboard.add(IClipboard::kPNG, png_data);
     if (clipboard.marshall().size() > m_maximumClipboardSize) {
         LOG_NOTE("not copying the screenshot to the clipboard: "
                  "it is over the configured size limit");

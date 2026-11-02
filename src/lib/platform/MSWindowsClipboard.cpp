@@ -21,6 +21,7 @@
 #include "platform/MSWindowsClipboardTextConverter.h"
 #include "platform/MSWindowsClipboardUTF16Converter.h"
 #include "platform/MSWindowsClipboardBitmapConverter.h"
+#include "platform/MSWindowsClipboardPNGConverter.h"
 #include "platform/MSWindowsClipboardHTMLConverter.h"
 #include "platform/MSWindowsClipboardFacade.h"
 #include "arch/win32/ArchMiscWindows.h"
@@ -39,6 +40,7 @@ MSWindowsClipboard::MSWindowsClipboard(HWND window) :
     // add converters, most desired first
     m_converters.push_back(new MSWindowsClipboardUTF16Converter);
     m_converters.push_back(new MSWindowsClipboardBitmapConverter);
+    m_converters.push_back(new MSWindowsClipboardPNGConverter);
     m_converters.push_back(new MSWindowsClipboardHTMLConverter);
 }
 
