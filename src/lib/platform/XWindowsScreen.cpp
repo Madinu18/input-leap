@@ -326,8 +326,23 @@ void XWindowsScreen::leave()
 			//XAutoRepeatOn(m_display);
 		}
 
-		// move hider window under the cursor center
-        m_impl->XMoveWindow(m_display, m_window, m_xCenter, m_yCenter);
+		// Keep the pointer where it is and move the hider window over it,
+		// so the cursor is invisible at its current position instead of
+		// jumping to the middle of the screen and flashing there.
+        int root_x = m_xCenter;
+        int root_y = m_yCenter;
+        int win_x = 0;
+        int win_y = 0;
+        unsigned int mask = 0;
+        Window root = None;
+        Window child = None;
+        if (m_impl->XQueryPointer(m_display, m_root, &root, &child,
+                                  &root_x, &root_y, &win_x, &win_y, &mask)) {
+            m_impl->XMoveWindow(m_display, m_window, root_x, root_y);
+        }
+        else {
+            m_impl->XMoveWindow(m_display, m_window, m_xCenter, m_yCenter);
+        }
 	}
 
 	// raise and show the window
@@ -352,9 +367,9 @@ void XWindowsScreen::leave()
 	if (m_isPrimary) {
 		warpCursor(m_xCenter, m_yCenter);
 	}
-	else {
-		fakeMouseMove(m_xCenter, m_yCenter);
-	}
+	// On a secondary screen the pointer stays where it is and the hider
+	// window above it keeps the cursor invisible until the next enter
+	// warps it to the entry point.
 
 	// set input context focus to our window
     if (m_ic != nullptr) {
