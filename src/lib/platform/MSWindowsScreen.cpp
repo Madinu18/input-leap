@@ -618,6 +618,42 @@ bool MSWindowsScreen::capture_screenshot(Screenshot& screenshot)
     return true;
 }
 
+bool MSWindowsScreen::is_file_drag_in_progress() const
+{
+    if (!m_buttons[kButtonLeft]) {
+        return false;
+    }
+
+    const HWND foreground = GetForegroundWindow();
+    if (foreground == nullptr) {
+        return false;
+    }
+
+    DWORD pid = 0;
+    GetWindowThreadProcessId(foreground, &pid);
+    if (pid == 0) {
+        return false;
+    }
+
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (process == nullptr) {
+        return false;
+    }
+
+    wchar_t path[MAX_PATH] = {};
+    DWORD length = MAX_PATH;
+    bool explorer = false;
+    if (QueryFullProcessImageNameW(process, 0, path, &length)) {
+        const std::wstring name(path, length);
+        const std::wstring exe = L"\\explorer.exe";
+        explorer = name.size() >= exe.size() &&
+                   _wcsicmp(name.c_str() + name.size() - exe.size(),
+                            exe.c_str()) == 0;
+    }
+    CloseHandle(process);
+    return explorer;
+}
+
 void MSWindowsScreen::reconfigure(std::uint32_t activeSides)
 {
     assert(m_isPrimary);

@@ -80,6 +80,7 @@ public:
                           std::int32_t& height) const;
     virtual void getCursorPos(std::int32_t& x, std::int32_t& y) const;
     bool capture_screenshot(Screenshot& screenshot) override;
+    bool is_file_drag_in_progress() const override;
 
     // IPrimaryScreen overrides
     virtual void reconfigure(std::uint32_t activeSides);

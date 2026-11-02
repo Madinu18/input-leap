@@ -160,6 +160,13 @@ public:
     //! Return true if capture_screenshot() can work on this platform.
     virtual bool can_capture_screenshot() const { return true; }
 
+    //! Return true while a file is being dragged from a file manager.
+    /*!
+    Used to keep the pointer on the primary screen so the file can be
+    dropped on a transfer line instead of switching machines.
+    */
+    virtual bool is_file_drag_in_progress() const { return false; }
+
     //! Configure which screen edges can receive file drops.
     virtual void transfer_set_peers(const std::vector<EDirection>&)
     {
