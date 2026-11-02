@@ -26,6 +26,7 @@
 #include <oleidl.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -282,6 +283,44 @@ LRESULT MSWindowsTransferOverlay::handle_message(HWND window, UINT message,
         }
     }
 
+    if (message == WM_TIMER && wparam == 1) {
+        ++pulse_phase_;
+        if (pulse_phase_ > 400) {
+            pulse_phase_ = 0;
+        }
+        if (dragging_ && (file_drag_ || elevated_)) {
+            for (EdgeWindow& edge : edges_) {
+                if (edge.visible) {
+                    render_edge(edge);
+                }
+            }
+        }
+        if (progress_visible_) {
+            const double target = progress_total_ != 0
+                ? 100.0 * static_cast<double>(progress_done_) /
+                      static_cast<double>(progress_total_)
+                : 100.0;
+            progress_shown_ += (target - progress_shown_) * 0.22;
+            if (std::abs(target - progress_shown_) < 0.2) {
+                progress_shown_ = target;
+            }
+            if (progress_window_ != nullptr) {
+                InvalidateRect(progress_window_, nullptr, FALSE);
+            }
+        }
+        return 0;
+    }
+
+    if (message == WM_TIMER && wparam == 2) {
+        KillTimer(window, 2);
+        if (progress_window_ != nullptr) {
+            ShowWindow(progress_window_, SW_HIDE);
+        }
+        progress_visible_ = false;
+        update_animation();
+        return 0;
+    }
+
     if (message == WM_DROPFILES) {
         EdgeWindow* edge = window_to_edge(window);
         auto drop = reinterpret_cast<HDROP>(wparam);
@@ -319,6 +358,7 @@ void MSWindowsTransferOverlay::create_windows()
     window_class.hInstance = instance_;
     window_class.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
     window_class.lpszClassName = L"InputLeapTransferOverlay";
+    window_class.style = CS_DROPSHADOW;
     window_class_ = RegisterClassExW(&window_class);
 
     if (window_class_ == 0) {
@@ -456,23 +496,37 @@ void MSWindowsTransferOverlay::render_edge(EdgeWindow& edge)
     // the process is elevated and the legacy WM_DROPFILES path gives us no
     // early warning. The rest of the drop zone stays hit-testable with the
     // smallest non-zero alpha.
+
+    // Neon line: a bright core with a soft gradient halo. The pulse
+    // animation modulates the intensity while a file drag is active.
     const bool show_line = file_drag_ || elevated_;
+    const double pulse = 0.72 + 0.28 * std::sin(pulse_phase_ * 0.16);
+    const int thickness = edge.glowing ? 8 : 6;
+    const int halo = edge.glowing ? kPulseRadius : 12;
 
-    const int line = edge.glowing ? kGlowWidth : kLineWidth;
-    const std::uint32_t color = edge.glowing
-        ? 0xFF8BDCFFu   // #8bdcff
-        : 0xFF2F6FEDu;  // #2f6fed
-
-    // Keep the full drop zone hit-testable. Layered windows may let the
-    // mouse through pixels with zero alpha, so use the smallest non-zero
-    // alpha outside the visible line.
     std::vector<std::uint32_t> pixels(
         static_cast<std::size_t>(edge.width) * edge.height, 0x01000000u);
 
-    auto set_pixel = [&](int x, int y) {
-        if (x >= 0 && x < edge.width && y >= 0 && y < edge.height) {
-            pixels[static_cast<std::size_t>(y) * edge.width + x] = color;
+    auto blend_pixel = [&](int x, int y, double intensity) {
+        if (x < 0 || x >= edge.width || y < 0 || y >= edge.height ||
+            intensity <= 0.0) {
+            return;
         }
+        const double clamped = std::min(1.0, intensity) * pulse;
+        const int alpha = static_cast<int>(clamped * clamped * 255.0);
+        if (alpha <= 1) {
+            return;
+        }
+        const double t = std::min(1.0, clamped);
+        const int r = static_cast<int>(47 + (139 - 47) * t);
+        const int g = static_cast<int>(111 + (220 - 111) * t);
+        const int b = static_cast<int>(237 + (255 - 237) * t);
+        const std::uint32_t value =
+            (static_cast<std::uint32_t>(alpha) << 24) |
+            (static_cast<std::uint32_t>(r * alpha / 255) << 16) |
+            (static_cast<std::uint32_t>(g * alpha / 255) << 8) |
+            static_cast<std::uint32_t>(b * alpha / 255);
+        pixels[static_cast<std::size_t>(y) * edge.width + x] = value;
     };
 
     const int span_vertical = line_span(edge.height);
@@ -481,40 +535,46 @@ void MSWindowsTransferOverlay::render_edge(EdgeWindow& edge)
     const int start_horizontal = (edge.width - span_horizontal) / 2;
 
     if (show_line) {
+        auto intensity_for = [&](int distance) {
+            if (distance <= thickness / 2) {
+                return 1.0;
+            }
+            const double falloff =
+                1.0 - static_cast<double>(distance - thickness / 2) / halo;
+            return falloff > 0.0 ? falloff * falloff * 0.9 : 0.0;
+        };
+
         switch (edge.direction) {
         case kLeft:
+        case kRight: {
+            const int center = kLineInset + thickness / 2;
             for (int y = start_vertical; y < start_vertical + span_vertical; ++y) {
-                for (int x = 0; x < line; ++x) {
-                    set_pixel(kLineInset + x, y);
+                for (int d = -halo; d <= halo; ++d) {
+                    const int x = edge.direction == kLeft
+                        ? center + d
+                        : edge.width - 1 - center - d;
+                    blend_pixel(x, y, intensity_for(std::abs(d)));
                 }
             }
             break;
-        case kRight:
-            for (int y = start_vertical; y < start_vertical + span_vertical; ++y) {
-                for (int x = 0; x < line; ++x) {
-                    set_pixel(edge.width - 1 - kLineInset - x, y);
-                }
-            }
-            break;
+        }
         case kTop:
-            for (int y = 0; y < line; ++y) {
-                for (int x = start_horizontal; x < start_horizontal + span_horizontal; ++x) {
-                    set_pixel(x, kLineInset + y);
+        case kBottom: {
+            const int center = kLineInset + thickness / 2;
+            for (int x = start_horizontal; x < start_horizontal + span_horizontal; ++x) {
+                for (int d = -halo; d <= halo; ++d) {
+                    const int y = edge.direction == kTop
+                        ? center + d
+                        : edge.height - 1 - center - d;
+                    blend_pixel(x, y, intensity_for(std::abs(d)));
                 }
             }
             break;
-        case kBottom:
-            for (int y = 0; y < line; ++y) {
-                for (int x = start_horizontal; x < start_horizontal + span_horizontal; ++x) {
-                    set_pixel(x, edge.height - 1 - kLineInset - y);
-                }
-            }
-            break;
+        }
         default:
             return;
         }
     }
-
     HDC screen = GetDC(nullptr);
     HDC memory = CreateCompatibleDC(screen);
 
@@ -611,6 +671,25 @@ void MSWindowsTransferOverlay::update_glow()
     }
 }
 
+void MSWindowsTransferOverlay::update_animation()
+{
+    HWND host = edges_[0].window;
+    if (host == nullptr) {
+        return;
+    }
+
+    const bool needed = progress_visible_ ||
+                        (dragging_ && (file_drag_ || elevated_));
+    if (needed && !animation_timer_) {
+        SetTimer(host, 1, 33, nullptr);
+        animation_timer_ = true;
+    }
+    else if (!needed && animation_timer_) {
+        KillTimer(host, 1);
+        animation_timer_ = false;
+    }
+}
+
 void MSWindowsTransferOverlay::set_glow(EDirection direction, bool glowing)
 {
     EdgeWindow* edge = direction_to_edge(direction);
@@ -634,6 +713,7 @@ void MSWindowsTransferOverlay::set_file_drag(bool active)
         }
     }
     update_glow();
+    update_animation();
 }
 
 void MSWindowsTransferOverlay::button_down(int x, int y)
@@ -664,6 +744,7 @@ void MSWindowsTransferOverlay::resume_drag()
     last_x_ = position.x;
     last_y_ = position.y;
     update_visible();
+    update_animation();
 }
 
 void MSWindowsTransferOverlay::motion(int x, int y)
@@ -679,6 +760,7 @@ void MSWindowsTransferOverlay::motion(int x, int y)
         std::abs(x - start_x_) + std::abs(y - start_y_) >= 4) {
         dragging_ = true;
         update_visible();
+        update_animation();
     }
     else if (dragging_) {
         update_glow();
@@ -695,6 +777,7 @@ void MSWindowsTransferOverlay::button_up()
     // would make OLE cancel the drop and send DragLeave instead.
     if (!file_drag_) {
         update_visible();
+        update_animation();
     }
 }
 
@@ -721,6 +804,7 @@ void MSWindowsTransferOverlay::drop_files(EDirection direction,
     dragging_ = false;
     file_drag_ = false;
     update_visible();
+    update_animation();
 }
 
 MSWindowsTransferOverlay::EdgeWindow*
@@ -779,7 +863,28 @@ void MSWindowsTransferOverlay::create_progress_window()
     if (progress_window_ != nullptr) {
         SetWindowLongPtrW(progress_window_, GWLP_USERDATA,
                           reinterpret_cast<LONG_PTR>(this));
-        SetLayeredWindowAttributes(progress_window_, 0, 235, LWA_ALPHA);
+        SetLayeredWindowAttributes(progress_window_, 0, 255, LWA_ALPHA);
+        SetWindowRgn(progress_window_,
+                     CreateRoundRectRgn(0, 0, kProgressWidth + 1,
+                                        kProgressHeight + 1, 20, 20),
+                     TRUE);
+
+        // Windows 11 gives the window proper rounded corners and a shadow.
+        using DwmSetWindowAttributeFn =
+            HRESULT(WINAPI*)(HWND, DWORD, LPCVOID, DWORD);
+        HMODULE dwm = LoadLibraryW(L"dwmapi.dll");
+        if (dwm != nullptr) {
+            auto set_attribute =
+                reinterpret_cast<DwmSetWindowAttributeFn>(
+                    GetProcAddress(dwm, "DwmSetWindowAttribute"));
+            if (set_attribute != nullptr) {
+                const DWORD preference = 2; // DWMWCP_ROUND
+                set_attribute(progress_window_, 33,
+                              &preference, sizeof(preference));
+            }
+            FreeLibrary(dwm);
+        }
+
         ShowWindow(progress_window_, SW_HIDE);
     }
 }
@@ -811,6 +916,12 @@ void MSWindowsTransferOverlay::show_progress(const std::string& name,
     progress_total_ = total;
     progress_sending_ = sending;
     progress_visible_ = true;
+    progress_done_state_ = false;
+    progress_success_ = false;
+
+    if (progress_shown_ > 100.0) {
+        progress_shown_ = 0.0;
+    }
 
     LOG_DEBUG("showing transfer progress: %s %llu/%llu sending=%d",
               name.c_str(), static_cast<unsigned long long>(done),
@@ -818,8 +929,9 @@ void MSWindowsTransferOverlay::show_progress(const std::string& name,
 
     position_progress_window();
     ShowWindow(progress_window_, SW_SHOWNOACTIVATE);
-    InvalidateRect(progress_window_, nullptr, TRUE);
+    InvalidateRect(progress_window_, nullptr, FALSE);
     UpdateWindow(progress_window_);
+    update_animation();
 }
 
 void MSWindowsTransferOverlay::finish_progress(const std::string& message,
@@ -827,69 +939,139 @@ void MSWindowsTransferOverlay::finish_progress(const std::string& message,
 {
     LOG_DEBUG("transfer overlay finished: success=%d message=%s",
               success, message.c_str());
-    if (progress_window_ != nullptr) {
-        ShowWindow(progress_window_, SW_HIDE);
+
+    if (progress_window_ == nullptr) {
+        progress_visible_ = false;
+        update_animation();
+        return;
     }
-    progress_visible_ = false;
+
+    progress_done_state_ = true;
+    progress_success_ = success;
+    progress_message_ = wide(message);
+    progress_shown_ = 100.0;
+    progress_visible_ = true;
+
+    ShowWindow(progress_window_, SW_SHOWNOACTIVATE);
+    InvalidateRect(progress_window_, nullptr, FALSE);
+    UpdateWindow(progress_window_);
+    SetTimer(progress_window_, 2, 1700, nullptr);
+    update_animation();
 }
 
 void MSWindowsTransferOverlay::paint_progress(HDC dc)
 {
     RECT client{};
     GetClientRect(progress_window_, &client);
+    const int width = client.right;
+    const int height = client.bottom;
 
-    HBRUSH background = CreateSolidBrush(RGB(16, 21, 28));
+    const COLORREF accent = progress_done_state_
+        ? (progress_success_ ? RGB(49, 196, 141) : RGB(240, 106, 122))
+        : RGB(47, 111, 237);
+
+    // Card background and border.
+    HBRUSH background = CreateSolidBrush(RGB(15, 20, 27));
     FillRect(dc, &client, background);
     DeleteObject(background);
 
-    HPEN border = CreatePen(PS_SOLID, 1, RGB(76, 157, 255));
+    HPEN border = CreatePen(PS_SOLID, 1, RGB(38, 50, 67));
     HGDIOBJ old_pen = SelectObject(dc, border);
     HGDIOBJ old_brush = SelectObject(dc, GetStockObject(NULL_BRUSH));
-    Rectangle(dc, 0, 0, client.right, client.bottom);
+    Rectangle(dc, 0, 0, width, height);
     SelectObject(dc, old_brush);
     SelectObject(dc, old_pen);
     DeleteObject(border);
 
-    SetBkMode(dc, TRANSPARENT);
-    SetTextColor(dc, RGB(242, 246, 251));
-    HFONT font = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
-    HGDIOBJ old_font = SelectObject(dc, font);
+    // Accent bar along the top edge.
+    RECT accent_bar{0, 0, width, 3};
+    HBRUSH accent_brush = CreateSolidBrush(accent);
+    FillRect(dc, &accent_bar, accent_brush);
 
-    const std::wstring title = (progress_sending_ ? L"Sending " : L"Receiving ") +
-                               wide(progress_name_);
-    RECT title_rect{14, 8, client.right - 14, 30};
+    SetBkMode(dc, TRANSPARENT);
+
+    HFONT title_font = CreateFontW(-15, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE,
+                                   FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                                   CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                                   DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+    HFONT big_font = CreateFontW(-26, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+                                 DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                                 CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                                 DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+    HFONT small_font = CreateFontW(-12, 0, 0, 0, FW_NORMAL, FALSE, FALSE,
+                                   FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                                   CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                                   DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+
+    std::wstring title;
+    if (progress_done_state_) {
+        title = (progress_success_ ? L"Transfer complete  \u2713"
+                                   : L"Transfer failed  \u2715");
+    }
+    else {
+        title = (progress_sending_ ? L"Sending  " : L"Receiving  ") +
+                wide(progress_name_);
+    }
+
+    HGDIOBJ old_font = SelectObject(dc, title_font);
+    SetTextColor(dc, RGB(230, 237, 247));
+    RECT title_rect{20, 14, width - 110, 38};
     DrawTextW(dc, title.c_str(), -1, &title_rect,
               DT_SINGLELINE | DT_LEFT | DT_VCENTER | DT_END_ELLIPSIS);
 
-    const int percent = progress_total_ == 0
-        ? 100
-        : static_cast<int>((progress_done_ * 100) / progress_total_);
-    const std::string status_text = std::to_string(percent) + "%  " +
-        format_bytes(progress_done_) + " / " + format_bytes(progress_total_);
-    const std::wstring status = wide(status_text);
-    RECT status_rect{14, 30, client.right - 14, 50};
-    DrawTextW(dc, status.c_str(), -1, &status_rect,
-              DT_SINGLELINE | DT_LEFT | DT_VCENTER);
+    // Large percentage on the right.
+    wchar_t percent_text[16];
+    swprintf_s(percent_text, L"%d%%", static_cast<int>(progress_shown_ + 0.5));
+    SelectObject(dc, big_font);
+    SetTextColor(dc, accent);
+    RECT percent_rect{width - 104, 10, width - 20, 44};
+    DrawTextW(dc, percent_text, -1, &percent_rect,
+              DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
 
-    RECT bar{14, 58, client.right - 14, 70};
-    HBRUSH bar_background = CreateSolidBrush(RGB(41, 50, 65));
-    FillRect(dc, &bar, bar_background);
-    DeleteObject(bar_background);
-
-    RECT filled = bar;
-    if (progress_total_ > 0) {
-        filled.right = bar.left + static_cast<LONG>(
-            (std::min<std::uint64_t>(progress_done_, progress_total_) *
-             (bar.right - bar.left)) / progress_total_);
+    // Status line.
+    SelectObject(dc, small_font);
+    SetTextColor(dc, RGB(143, 164, 194));
+    std::wstring status;
+    if (progress_done_state_) {
+        status = progress_message_;
     }
     else {
-        filled.right = bar.right;
+        status = wide(format_bytes(progress_done_) + " / " +
+                      format_bytes(progress_total_));
     }
-    HBRUSH bar_brush = CreateSolidBrush(RGB(76, 157, 255));
-    FillRect(dc, &filled, bar_brush);
-    DeleteObject(bar_brush);
+    RECT status_rect{20, 42, width - 20, 62};
+    DrawTextW(dc, status.c_str(), -1, &status_rect,
+              DT_SINGLELINE | DT_LEFT | DT_VCENTER | DT_END_ELLIPSIS);
+
+    // Progress track.
+    const RECT track{20, 74, width - 20, 88};
+    HBRUSH track_brush = CreateSolidBrush(RGB(27, 36, 50));
+    FillRect(dc, &track, track_brush);
+    DeleteObject(track_brush);
+
+    const double fraction = std::max(0.0, std::min(1.0, progress_shown_ / 100.0));
+    const int track_width = static_cast<int>(track.right - track.left);
+    const int filled_width = static_cast<int>(track_width * fraction);
+    if (filled_width > 0) {
+        // Horizontal gradient from the accent colour to the light core.
+        for (int x = 0; x < filled_width; ++x) {
+            const double t = static_cast<double>(x) /
+                             std::max(1, track_width);
+            const int r = static_cast<int>(47 + (139 - 47) * t);
+            const int g = static_cast<int>(111 + (220 - 111) * t);
+            const int b = static_cast<int>(237 + (255 - 237) * t);
+            RECT column{track.left + x, track.top, track.left + x + 1,
+                        track.bottom};
+            HBRUSH column_brush = CreateSolidBrush(RGB(r, g, b));
+            FillRect(dc, &column, column_brush);
+            DeleteObject(column_brush);
+        }
+    }
 
     SelectObject(dc, old_font);
+    DeleteObject(title_font);
+    DeleteObject(big_font);
+    DeleteObject(small_font);
+    DeleteObject(accent_brush);
 }
-
 } // namespace inputleap

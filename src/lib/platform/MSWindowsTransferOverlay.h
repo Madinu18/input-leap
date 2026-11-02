@@ -66,6 +66,7 @@ public:
 
     //! A file drag entered or left one of the edge drop zones.
     void set_file_drag(bool active);
+    bool has_file_drag() const { return file_drag_; }
 
     LRESULT handle_message(HWND window, UINT message, WPARAM wparam,
                            LPARAM lparam);
@@ -93,6 +94,7 @@ private:
     void position_progress_window();
     void update_visible();
     void update_glow();
+    void update_animation();
     void position_edge(EdgeWindow& edge);
     void render_edge(EdgeWindow& edge);
 
@@ -128,8 +130,12 @@ private:
     std::string progress_name_;
     std::uint64_t progress_done_ = 0;
     std::uint64_t progress_total_ = 0;
-    std::wstring progress_message_;
+    double progress_shown_ = 0.0;
+    bool progress_done_state_ = false;
     bool progress_success_ = false;
+    std::wstring progress_message_;
+    int pulse_phase_ = 0;
+    bool animation_timer_ = false;
 
     static constexpr int kDropZone = 64;
     static constexpr int kLineWidth = 12;
@@ -139,8 +145,9 @@ private:
     static constexpr int kLineInset = 20;
     static constexpr int kLineSpanPercent = 25;
     static constexpr int kMinLineSpan = 160;
-    static constexpr int kProgressWidth = 460;
-    static constexpr int kProgressHeight = 82;
+    static constexpr int kProgressWidth = 520;
+    static constexpr int kProgressHeight = 112;
+    static constexpr int kPulseRadius = 18;
 
     static int line_span(int screen_size);
 };
