@@ -307,6 +307,17 @@ MSWindowsScreen::enter()
     // now on screen
     m_isOnScreen = true;
     forceShowCursor();
+
+    if (m_transferOverlay) {
+        // Re-arm the transfer lines when the pointer returns to this screen
+        // with the left button still held, so the drop can land here.
+        if (m_buttons[kButtonLeft]) {
+            m_transferOverlay->resume_drag();
+        }
+        else {
+            m_transferOverlay->hide_lines();
+        }
+    }
 }
 
 bool MSWindowsScreen::canLeave() {

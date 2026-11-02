@@ -52,6 +52,7 @@ public:
     void set_peers(const std::vector<EDirection>& peers);
 
     void button_down(int x, int y);
+    void resume_drag();
     void motion(int x, int y);
     void button_up();
     void hide_lines();
@@ -133,6 +134,9 @@ private:
     static constexpr int kDropZone = 64;
     static constexpr int kLineWidth = 12;
     static constexpr int kGlowWidth = 20;
+    // Keep the visible line away from the outer pixel of the screen: touching
+    // that pixel switches to the neighbouring machine before the drop lands.
+    static constexpr int kLineInset = 20;
     static constexpr int kLineSpanPercent = 25;
     static constexpr int kMinLineSpan = 160;
     static constexpr int kProgressWidth = 460;

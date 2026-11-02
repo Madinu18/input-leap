@@ -469,28 +469,28 @@ void MSWindowsTransferOverlay::render_edge(EdgeWindow& edge)
         case kLeft:
             for (int y = 0; y < edge.height; ++y) {
                 for (int x = 0; x < line; ++x) {
-                    set_pixel(x, y);
+                    set_pixel(kLineInset + x, y);
                 }
             }
             break;
         case kRight:
             for (int y = 0; y < edge.height; ++y) {
                 for (int x = 0; x < line; ++x) {
-                    set_pixel(edge.width - 1 - x, y);
+                    set_pixel(edge.width - 1 - kLineInset - x, y);
                 }
             }
             break;
         case kTop:
             for (int y = 0; y < line; ++y) {
                 for (int x = 0; x < edge.width; ++x) {
-                    set_pixel(x, y);
+                    set_pixel(x, kLineInset + y);
                 }
             }
             break;
         case kBottom:
             for (int y = 0; y < line; ++y) {
                 for (int x = 0; x < edge.width; ++x) {
-                    set_pixel(x, edge.height - 1 - y);
+                    set_pixel(x, edge.height - 1 - kLineInset - y);
                 }
             }
             break;
@@ -628,6 +628,26 @@ void MSWindowsTransferOverlay::button_down(int x, int y)
     start_y_ = y;
     last_x_ = x;
     last_y_ = y;
+}
+
+void MSWindowsTransferOverlay::resume_drag()
+{
+    // The pointer left this screen while the button was still held and came
+    // back; show the drop zones again so the file can be dropped without
+    // pressing the button a second time.
+    POINT position{};
+    if (!GetCursorPos(&position)) {
+        return;
+    }
+
+    button_down_ = true;
+    dragging_ = true;
+    file_drag_ = false;
+    start_x_ = position.x;
+    start_y_ = position.y;
+    last_x_ = position.x;
+    last_y_ = position.y;
+    update_visible();
 }
 
 void MSWindowsTransferOverlay::motion(int x, int y)
