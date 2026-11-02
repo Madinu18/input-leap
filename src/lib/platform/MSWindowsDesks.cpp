@@ -538,18 +538,11 @@ MSWindowsDesks::deskLeave(Desk* desk, HKL keyLayout)
         // active window.
         int x, y, w, h;
         // with a low level hook the cursor will never budge so
-        // just a 1x1 window is sufficient.
-        POINT cursor{};
-        if (GetCursorPos(&cursor)) {
-            // Cover the cursor where it is. Warping it to the middle first
-            // made it visibly jump across the screen before it disappeared.
-            x = cursor.x;
-            y = cursor.y;
-        }
-        else {
-            x = m_xCenter;
-            y = m_yCenter;
-        }
+        // just a 1x1 window is sufficient.  While the pointer is on a
+        // secondary screen the primary cursor is repeatedly warped to the
+        // centre, so the hider has to sit there to cover it.
+        x = m_xCenter;
+        y = m_yCenter;
         w = 1;
         h = 1;
         SetWindowPos(desk->m_window, HWND_TOP, x, y, w, h,
