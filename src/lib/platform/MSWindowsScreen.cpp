@@ -352,9 +352,9 @@ void MSWindowsScreen::leave()
 
     if (m_isPrimary) {
 
-        // warp to center
-        LOG_DEBUG1("warping cursor to center: %+d, %+d", m_xCenter, m_yCenter);
-        warpCursor(m_xCenter, m_yCenter);
+        // Leave the pointer where it is: the desk window covers it, so it
+        // disappears without jumping to the middle of the screen first.
+        LOG_DEBUG1("leaving cursor at %+d, %+d", m_xCursor, m_yCursor);
 
         // disable special key sequences on win95 family
         enableSpecialKeys(false);

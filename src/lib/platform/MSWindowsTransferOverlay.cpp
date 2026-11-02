@@ -971,6 +971,10 @@ void MSWindowsTransferOverlay::paint_progress(HDC dc)
     // Paint into an off-screen bitmap and blit once, so the animated
     // percentage and progress bar do not flicker.
     HDC target = dc;
+    if (width <= 0 || height <= 0) {
+        return;
+    }
+
     HDC buffer = CreateCompatibleDC(target);
     HBITMAP bitmap = CreateCompatibleBitmap(target, width, height);
     if (buffer == nullptr || bitmap == nullptr) {
@@ -1087,8 +1091,8 @@ void MSWindowsTransferOverlay::paint_progress(HDC dc)
     DeleteObject(title_font);
     DeleteObject(big_font);
     DeleteObject(small_font);
-    SelectObject(buffer, old_bitmap);
     BitBlt(target, 0, 0, width, height, buffer, 0, 0, SRCCOPY);
+    SelectObject(buffer, old_bitmap);
     DeleteObject(bitmap);
     DeleteDC(buffer);
 }
