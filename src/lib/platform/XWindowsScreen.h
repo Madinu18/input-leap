@@ -57,6 +57,12 @@ public:
     void getCursorPos(std::int32_t& x, std::int32_t& y) const override;
     bool capture_screenshot(Screenshot& screenshot) override;
 
+    // X11 capture only works on a bare X server; under XWayland it can
+    // return a black image, and users expect the desktop's own screenshot
+    // tool (with region selection) to handle the key. Leave PrintScreen to
+    // the desktop and let clipboard sharing move the resulting image.
+    bool can_capture_screenshot() const override { return false; }
+
     // IPrimaryScreen overrides
     void reconfigure(std::uint32_t activeSides) override;
     void warpCursor(std::int32_t x, std::int32_t y) override;

@@ -135,6 +135,8 @@ public:
                                         DWORD* effect) override
     {
         accepted_ = has_files(data);
+        LOG_DEBUG("OLE drag enter on edge %d, files=%d",
+                  static_cast<int>(direction_), accepted_ ? 1 : 0);
         overlay_->set_file_drag(accepted_);
         overlay_->set_glow(direction_, accepted_);
         *effect = accepted_ ? DROPEFFECT_COPY : DROPEFFECT_NONE;
@@ -272,6 +274,9 @@ LRESULT MSWindowsTransferOverlay::handle_message(HWND window, UINT message,
     if (message == WM_DROPFILES) {
         EdgeWindow* edge = window_to_edge(window);
         auto drop = reinterpret_cast<HDROP>(wparam);
+        LOG_DEBUG("WM_DROPFILES on edge %d (elevated=%d)",
+                  edge != nullptr ? static_cast<int>(edge->direction) : -1,
+                  elevated_ ? 1 : 0);
         if (edge != nullptr && drop != nullptr) {
             std::vector<std::string> files;
             const UINT count = DragQueryFileW(drop, 0xFFFFFFFF, nullptr, 0);
@@ -663,6 +668,9 @@ void MSWindowsTransferOverlay::hide_lines()
 void MSWindowsTransferOverlay::drop_files(EDirection direction,
                                           std::vector<std::string> files)
 {
+    LOG_DEBUG("transfer drop: %zd file(s) toward direction %d",
+              files.size(), static_cast<int>(direction));
+
     TransferDrop drop;
     drop.edge = direction;
     drop.files = std::move(files);
@@ -762,6 +770,10 @@ void MSWindowsTransferOverlay::show_progress(const std::string& name,
     progress_total_ = total;
     progress_sending_ = sending;
     progress_visible_ = true;
+
+    LOG_DEBUG("showing transfer progress: %s %llu/%llu sending=%d",
+              name.c_str(), static_cast<unsigned long long>(done),
+              static_cast<unsigned long long>(total), sending ? 1 : 0);
 
     position_progress_window();
     ShowWindow(progress_window_, SW_SHOWNOACTIVATE);
