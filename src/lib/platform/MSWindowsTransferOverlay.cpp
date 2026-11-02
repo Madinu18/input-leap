@@ -300,11 +300,13 @@ LRESULT MSWindowsTransferOverlay::handle_message(HWND window, UINT message,
                 ? 100.0 * static_cast<double>(progress_done_) /
                       static_cast<double>(progress_total_)
                 : 100.0;
+            const double previous = progress_shown_;
             progress_shown_ += (target - progress_shown_) * 0.22;
             if (std::abs(target - progress_shown_) < 0.2) {
                 progress_shown_ = target;
             }
-            if (progress_window_ != nullptr) {
+            if (progress_window_ != nullptr &&
+                std::abs(progress_shown_ - previous) >= 0.05) {
                 InvalidateRect(progress_window_, nullptr, FALSE);
             }
         }
@@ -966,6 +968,19 @@ void MSWindowsTransferOverlay::paint_progress(HDC dc)
     const int width = client.right;
     const int height = client.bottom;
 
+    // Paint into an off-screen bitmap and blit once, so the animated
+    // percentage and progress bar do not flicker.
+    HDC target = dc;
+    HDC buffer = CreateCompatibleDC(target);
+    HBITMAP bitmap = CreateCompatibleBitmap(target, width, height);
+    if (buffer == nullptr || bitmap == nullptr) {
+        if (bitmap != nullptr) DeleteObject(bitmap);
+        if (buffer != nullptr) DeleteDC(buffer);
+        return;
+    }
+    HGDIOBJ old_bitmap = SelectObject(buffer, bitmap);
+    dc = buffer;
+
     const COLORREF accent = progress_done_state_
         ? (progress_success_ ? RGB(49, 196, 141) : RGB(240, 106, 122))
         : RGB(47, 111, 237);
@@ -1072,6 +1087,9 @@ void MSWindowsTransferOverlay::paint_progress(HDC dc)
     DeleteObject(title_font);
     DeleteObject(big_font);
     DeleteObject(small_font);
-    DeleteObject(accent_brush);
+    SelectObject(buffer, old_bitmap);
+    BitBlt(target, 0, 0, width, height, buffer, 0, 0, SRCCOPY);
+    DeleteObject(bitmap);
+    DeleteDC(buffer);
 }
 } // namespace inputleap
