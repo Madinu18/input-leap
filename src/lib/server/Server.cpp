@@ -26,6 +26,7 @@
 #include "inputleap/IPlatformScreen.h"
 #include "inputleap/DropHelper.h"
 #include "inputleap/Screenshot.h"
+#include "inputleap/Clipboard.h"
 #include "inputleap/option_types.h"
 #include "inputleap/protocol_types.h"
 #include "inputleap/XScreen.h"
@@ -2655,6 +2656,40 @@ void Server::on_screenshot_received(const std::string& client_name,
     if (path.empty()) {
         LOG_ERR("could not save screenshot from \"%s\"", client_name.c_str());
     }
+
+    // Also put the image on the clipboard so it can be pasted directly on
+    // this machine or on any connected client through clipboard sharing.
+    publish_screenshot_to_clipboard(png_data);
+}
+
+void Server::publish_screenshot_to_clipboard(const std::string& png_data)
+{
+    if (!m_enableClipboard || m_screen == nullptr || m_primaryClient == nullptr) {
+        return;
+    }
+
+    std::string bitmap;
+    std::string error;
+    if (!decode_png_to_clipboard_bitmap(png_data, bitmap, error)) {
+        LOG_ERR("could not copy the screenshot to the clipboard: %s",
+                error.c_str());
+        return;
+    }
+
+    Clipboard clipboard;
+    clipboard.add(IClipboard::kBitmap, bitmap);
+    if (clipboard.marshall().size() > m_maximumClipboardSize) {
+        LOG_NOTE("not copying the screenshot to the clipboard: "
+                 "it is over the configured size limit");
+        return;
+    }
+
+    m_screen->setClipboard(kClipboardClipboard, &clipboard);
+
+    ClipboardInfo& info = m_clipboards[kClipboardClipboard];
+    ++info.m_clipboardSeqNum;
+    info.m_clipboardOwner = getName(m_primaryClient);
+    onClipboardChanged(m_primaryClient, kClipboardClipboard, info.m_clipboardSeqNum);
 }
 
 } // namespace inputleap

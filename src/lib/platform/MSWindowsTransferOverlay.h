@@ -19,6 +19,14 @@
 
 #include "inputleap/protocol_types.h"
 
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
 #include <Windows.h>
 
 #include <array>
@@ -54,6 +62,9 @@ public:
 
     void set_glow(EDirection direction, bool glowing);
     void drop_files(EDirection direction, std::vector<std::string> files);
+
+    //! A file drag entered or left one of the edge drop zones.
+    void set_file_drag(bool active);
 
     LRESULT handle_message(HWND window, UINT message, WPARAM wparam,
                            LPARAM lparam);
@@ -104,6 +115,8 @@ private:
 
     bool button_down_ = false;
     bool dragging_ = false;
+    bool file_drag_ = false;
+    bool elevated_ = false;
     int start_x_ = 0;
     int start_y_ = 0;
     int last_x_ = 0;
@@ -120,8 +133,12 @@ private:
     static constexpr int kDropZone = 64;
     static constexpr int kLineWidth = 12;
     static constexpr int kGlowWidth = 20;
+    static constexpr int kLineSpanPercent = 25;
+    static constexpr int kMinLineSpan = 160;
     static constexpr int kProgressWidth = 460;
     static constexpr int kProgressHeight = 82;
+
+    static int line_span(int screen_size);
 };
 
 } // namespace inputleap

@@ -169,7 +169,7 @@ void StreamChunker::sendScreenshot(const std::string& data, std::uint32_t reques
     std::size_t sentLength = 0;
     while (sentLength < data.size()) {
         const std::size_t chunkSize =
-            std::min(g_chunkSize, data.size() - sentLength);
+            (std::min)(g_chunkSize, data.size() - sentLength);
         events->add_event(EventType::SCREENSHOT_SENDING, event_target,
                           create_event_data<ScreenshotChunk>(
                               ScreenshotChunk::data(request_id,

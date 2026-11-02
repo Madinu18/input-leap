@@ -44,4 +44,13 @@ struct Screenshot {
 //! Encode a screenshot as PNG.
 bool encode_png(const Screenshot& screenshot, std::string& png, std::string& error);
 
+//! Decode a PNG into the internal clipboard bitmap format.
+/*!
+The result is a BMP without the 14 byte file header (a 40 byte
+BITMAPINFOHEADER followed by 32bpp BI_RGB pixels), which is the layout
+\c IClipboard::kBitmap expects.
+*/
+bool decode_png_to_clipboard_bitmap(const std::string& png, std::string& bitmap,
+                                    std::string& error);
+
 } // namespace inputleap

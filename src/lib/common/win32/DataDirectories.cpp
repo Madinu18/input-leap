@@ -19,11 +19,53 @@
 #include "encoding_utilities.h"
 
 #include <Shlobj.h>
+#include <WtsApi32.h>
 
 namespace inputleap {
 
+namespace {
+
+// When InputLeap runs from the Windows service it runs as SYSTEM, so the
+// known folders would resolve to the service profile instead of the desktop
+// user. Impersonate the interactive user while resolving them so downloads
+// and screenshots land in the user's own folders.
+class ScopedInteractiveUser
+{
+public:
+    ScopedInteractiveUser()
+    {
+        const DWORD session = WTSGetActiveConsoleSessionId();
+        if (session == 0xFFFFFFFF) {
+            return;
+        }
+        if (!WTSQueryUserToken(session, &token_)) {
+            token_ = nullptr;
+            return;
+        }
+        impersonating_ = ImpersonateLoggedOnUser(token_) != 0;
+    }
+
+    ~ScopedInteractiveUser()
+    {
+        if (impersonating_) {
+            RevertToSelf();
+        }
+        if (token_ != nullptr) {
+            CloseHandle(token_);
+        }
+    }
+
+private:
+    HANDLE token_ = nullptr;
+    bool impersonating_ = false;
+};
+
+} // namespace
+
 fs::path known_folder_path(const KNOWNFOLDERID& id)
 {
+    ScopedInteractiveUser user;
+
     fs::path path;
     WCHAR* buffer;
     HRESULT result = SHGetKnownFolderPath(id, 0, nullptr, &buffer);

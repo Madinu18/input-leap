@@ -201,7 +201,7 @@ void ScreenshotStore::prune()
         }
 
         --remaining;
-        remaining_bytes -= std::min(remaining_bytes, entry.size);
+        remaining_bytes -= (std::min)(remaining_bytes, entry.size);
     }
 }
 

@@ -211,7 +211,7 @@ if (BUILD_MSWINDOWS)
                   HINTS ENV BONJOUR_SDK_HOME
                   PATH_SUFFIXES "Lib/x64")
     set_target_properties (input-leap PROPERTIES LINK_FLAGS "/NODEFAULTLIB:LIBCMT")
-    target_link_libraries (input-leap ${DNSSD_LIB})
+    target_link_libraries (input-leap ${DNSSD_LIB} Wtsapi32)
 endif()
 if (BUILD_CARBON)
     find_library(APPSERVICES_LIB ApplicationServices)

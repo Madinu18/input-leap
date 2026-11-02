@@ -75,6 +75,23 @@ std::string format_bytes(std::uint64_t bytes)
     return buffer;
 }
 
+bool is_process_elevated()
+{
+    HANDLE token = nullptr;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+        return false;
+    }
+
+    TOKEN_ELEVATION elevation{};
+    DWORD size = sizeof(elevation);
+    const bool elevated =
+        GetTokenInformation(token, TokenElevation, &elevation,
+                            sizeof(elevation), &size) != 0 &&
+        elevation.TokenIsElevated != 0;
+    CloseHandle(token);
+    return elevated;
+}
+
 } // namespace
 
 class MSWindowsTransferDropTarget : public IDropTarget {
@@ -118,6 +135,7 @@ public:
                                         DWORD* effect) override
     {
         accepted_ = has_files(data);
+        overlay_->set_file_drag(accepted_);
         overlay_->set_glow(direction_, accepted_);
         *effect = accepted_ ? DROPEFFECT_COPY : DROPEFFECT_NONE;
         return S_OK;
@@ -133,6 +151,7 @@ public:
     HRESULT STDMETHODCALLTYPE DragLeave() override
     {
         accepted_ = false;
+        overlay_->set_file_drag(false);
         overlay_->set_glow(direction_, false);
         return S_OK;
     }
@@ -147,6 +166,7 @@ public:
         overlay_->set_glow(direction_, false);
         const bool accepted = accepted_ && !files.empty();
         accepted_ = false;
+        overlay_->set_file_drag(false);
         if (accepted) {
             overlay_->drop_files(direction_, std::move(files));
         }
@@ -204,6 +224,7 @@ MSWindowsTransferOverlay::MSWindowsTransferOverlay(HINSTANCE instance,
     edges_[2].direction = kTop;
     edges_[3].direction = kBottom;
 
+    elevated_ = is_process_elevated();
     create_windows();
     set_geometry();
 }
@@ -247,6 +268,30 @@ LRESULT MSWindowsTransferOverlay::handle_message(HWND window, UINT message,
             return 1;
         }
     }
+
+    if (message == WM_DROPFILES) {
+        EdgeWindow* edge = window_to_edge(window);
+        auto drop = reinterpret_cast<HDROP>(wparam);
+        if (edge != nullptr && drop != nullptr) {
+            std::vector<std::string> files;
+            const UINT count = DragQueryFileW(drop, 0xFFFFFFFF, nullptr, 0);
+            for (UINT i = 0; i < count; ++i) {
+                const UINT length = DragQueryFileW(drop, i, nullptr, 0);
+                std::wstring name(length + 1, L'\0');
+                DragQueryFileW(drop, i, name.data(), length + 1);
+                name.resize(length);
+                files.push_back(utf8_from_wide(name));
+            }
+            DragFinish(drop);
+            if (!files.empty()) {
+                drop_files(edge->direction, std::move(files));
+            }
+            return 0;
+        }
+        DragFinish(drop);
+        return 0;
+    }
+
     return DefWindowProcW(window, message, wparam, lparam);
 }
 
@@ -278,11 +323,25 @@ void MSWindowsTransferOverlay::create_windows()
 
         SetWindowLongPtrW(edge.window, GWLP_USERDATA,
                           reinterpret_cast<LONG_PTR>(this));
-        edge.drop_target = std::make_unique<MSWindowsTransferDropTarget>(
-            this, edge.direction);
-        if (RegisterDragDrop(edge.window, edge.drop_target.get()) != S_OK) {
-            LOG_WARN("could not register a transfer drop target");
-            edge.drop_target.reset();
+        if (elevated_) {
+            // UIPI does not let a medium integrity drag source (Explorer)
+            // talk to an elevated OLE drop target, so fall back to the
+            // legacy WM_DROPFILES path, which can be allowed explicitly.
+            ChangeWindowMessageFilterEx(edge.window, WM_DROPFILES,
+                                        MSGFLT_ALLOW, nullptr);
+            ChangeWindowMessageFilterEx(edge.window, 0x0049 /* WM_COPYGLOBALDATA */,
+                                        MSGFLT_ALLOW, nullptr);
+            ChangeWindowMessageFilterEx(edge.window, WM_COPYDATA,
+                                        MSGFLT_ALLOW, nullptr);
+            DragAcceptFiles(edge.window, TRUE);
+        }
+        else {
+            edge.drop_target = std::make_unique<MSWindowsTransferDropTarget>(
+                this, edge.direction);
+            if (RegisterDragDrop(edge.window, edge.drop_target.get()) != S_OK) {
+                LOG_WARN("could not register a transfer drop target");
+                edge.drop_target.reset();
+            }
         }
         ShowWindow(edge.window, SW_HIDE);
     }
@@ -295,6 +354,9 @@ void MSWindowsTransferOverlay::destroy_windows()
             if (edge.drop_target) {
                 RevokeDragDrop(edge.window);
                 edge.drop_target.reset();
+            }
+            if (elevated_) {
+                DragAcceptFiles(edge.window, FALSE);
             }
             DestroyWindow(edge.window);
             edge.window = nullptr;
@@ -321,6 +383,12 @@ void MSWindowsTransferOverlay::set_peers(const std::vector<EDirection>& peers)
     update_visible();
 }
 
+int MSWindowsTransferOverlay::line_span(int screen_size)
+{
+    const int span = screen_size * kLineSpanPercent / 100;
+    return std::max(kMinLineSpan, std::min(span, screen_size));
+}
+
 void MSWindowsTransferOverlay::position_edge(EdgeWindow& edge)
 {
     if (edge.window == nullptr) {
@@ -330,26 +398,26 @@ void MSWindowsTransferOverlay::position_edge(EdgeWindow& edge)
     switch (edge.direction) {
     case kLeft:
         edge.x = screen_x_;
-        edge.y = screen_y_;
+        edge.y = screen_y_ + (screen_height_ - line_span(screen_height_)) / 2;
         edge.width = kDropZone;
-        edge.height = screen_height_;
+        edge.height = line_span(screen_height_);
         break;
     case kRight:
         edge.x = screen_x_ + screen_width_ - kDropZone;
-        edge.y = screen_y_;
+        edge.y = screen_y_ + (screen_height_ - line_span(screen_height_)) / 2;
         edge.width = kDropZone;
-        edge.height = screen_height_;
+        edge.height = line_span(screen_height_);
         break;
     case kTop:
-        edge.x = screen_x_;
+        edge.x = screen_x_ + (screen_width_ - line_span(screen_width_)) / 2;
         edge.y = screen_y_;
-        edge.width = screen_width_;
+        edge.width = line_span(screen_width_);
         edge.height = kDropZone;
         break;
     case kBottom:
-        edge.x = screen_x_;
+        edge.x = screen_x_ + (screen_width_ - line_span(screen_width_)) / 2;
         edge.y = screen_y_ + screen_height_ - kDropZone;
-        edge.width = screen_width_;
+        edge.width = line_span(screen_width_);
         edge.height = kDropZone;
         break;
     default:
@@ -368,6 +436,12 @@ void MSWindowsTransferOverlay::render_edge(EdgeWindow& edge)
         return;
     }
 
+    // Only paint the accent line once a file drag is over the edge, or when
+    // the process is elevated and the legacy WM_DROPFILES path gives us no
+    // early warning. The rest of the drop zone stays hit-testable with the
+    // smallest non-zero alpha.
+    const bool show_line = file_drag_ || elevated_;
+
     const int line = edge.glowing ? kGlowWidth : kLineWidth;
     const std::uint32_t color = edge.glowing
         ? 0xFF8BDCFFu   // #8bdcff
@@ -385,37 +459,39 @@ void MSWindowsTransferOverlay::render_edge(EdgeWindow& edge)
         }
     };
 
-    switch (edge.direction) {
-    case kLeft:
-        for (int y = 0; y < edge.height; ++y) {
-            for (int x = 0; x < line; ++x) {
-                set_pixel(x, y);
+    if (show_line) {
+        switch (edge.direction) {
+        case kLeft:
+            for (int y = 0; y < edge.height; ++y) {
+                for (int x = 0; x < line; ++x) {
+                    set_pixel(x, y);
+                }
             }
-        }
-        break;
-    case kRight:
-        for (int y = 0; y < edge.height; ++y) {
-            for (int x = 0; x < line; ++x) {
-                set_pixel(edge.width - 1 - x, y);
+            break;
+        case kRight:
+            for (int y = 0; y < edge.height; ++y) {
+                for (int x = 0; x < line; ++x) {
+                    set_pixel(edge.width - 1 - x, y);
+                }
             }
-        }
-        break;
-    case kTop:
-        for (int y = 0; y < line; ++y) {
-            for (int x = 0; x < edge.width; ++x) {
-                set_pixel(x, y);
+            break;
+        case kTop:
+            for (int y = 0; y < line; ++y) {
+                for (int x = 0; x < edge.width; ++x) {
+                    set_pixel(x, y);
+                }
             }
-        }
-        break;
-    case kBottom:
-        for (int y = 0; y < line; ++y) {
-            for (int x = 0; x < edge.width; ++x) {
-                set_pixel(x, edge.height - 1 - y);
+            break;
+        case kBottom:
+            for (int y = 0; y < line; ++y) {
+                for (int x = 0; x < edge.width; ++x) {
+                    set_pixel(x, edge.height - 1 - y);
+                }
             }
+            break;
+        default:
+            return;
         }
-        break;
-    default:
-        return;
     }
 
     HDC screen = GetDC(nullptr);
@@ -505,7 +581,8 @@ void MSWindowsTransferOverlay::update_glow()
             break;
         }
 
-        const bool glowing = edge.visible && dragging_ && is_near;
+        const bool glowing = edge.visible && dragging_ &&
+                             (file_drag_ || elevated_) && is_near;
         if (glowing != edge.glowing) {
             edge.glowing = glowing;
             render_edge(edge);
@@ -521,6 +598,21 @@ void MSWindowsTransferOverlay::set_glow(EDirection direction, bool glowing)
     }
     edge->glowing = glowing;
     render_edge(*edge);
+}
+
+void MSWindowsTransferOverlay::set_file_drag(bool active)
+{
+    if (file_drag_ == active) {
+        return;
+    }
+
+    file_drag_ = active;
+    for (EdgeWindow& edge : edges_) {
+        if (edge.visible) {
+            render_edge(edge);
+        }
+    }
+    update_glow();
 }
 
 void MSWindowsTransferOverlay::button_down(int x, int y)
@@ -556,6 +648,7 @@ void MSWindowsTransferOverlay::button_up()
 {
     button_down_ = false;
     dragging_ = false;
+    file_drag_ = false;
     update_visible();
 }
 
@@ -563,6 +656,7 @@ void MSWindowsTransferOverlay::hide_lines()
 {
     button_down_ = false;
     dragging_ = false;
+    file_drag_ = false;
     update_visible();
 }
 
@@ -576,6 +670,7 @@ void MSWindowsTransferOverlay::drop_files(EDirection direction,
                        create_event_data<TransferDrop>(drop));
 
     dragging_ = false;
+    file_drag_ = false;
     update_visible();
 }
 

@@ -252,6 +252,7 @@ private:
     // capture a screenshot on the primary screen or ask the active client
     bool handle_screenshot_hotkey(KeyID id, KeyModifierMask mask);
     void capture_primary_screenshot();
+    void publish_screenshot_to_clipboard(const std::string& png_data);
 
     // file transfer helpers
     void handle_transfer_drop_event(const Event& event);
