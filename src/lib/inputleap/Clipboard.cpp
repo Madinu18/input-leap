@@ -62,6 +62,13 @@ Clipboard::add(EFormat format, const std::string& data)
     assert(m_open);
     assert(m_owner);
 
+    // An empty image format carries no data and must not overwrite a real
+    // image (the Windows clipboard reports CF_DIB for both bitmap and PNG,
+    // but PNG cannot be read back from it).
+    if ((format == kBitmap || format == kPNG) && data.empty()) {
+        return;
+    }
+
     m_data[format]  = data;
     m_added[format] = true;
 
