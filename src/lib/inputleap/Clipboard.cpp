@@ -57,6 +57,13 @@ Clipboard::clear()
 }
 
 void
+Clipboard::remove(EFormat format)
+{
+    m_data[format].clear();
+    m_added[format] = false;
+}
+
+void
 Clipboard::add(EFormat format, const std::string& data)
 {
     assert(m_open);

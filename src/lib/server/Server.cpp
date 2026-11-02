@@ -1578,6 +1578,14 @@ void Server::onClipboardChanged(BaseClientProxy* sender, ClipboardID id, std::ui
 		return;
 	}
 
+    // Images are also carried as a raw bitmap, which is several times larger
+    // than the PNG copy. Clients only need one of the two; drop the bitmap so
+    // slow links are not flooded with multi-megabyte clipboard transfers.
+    if (clipboard.m_clipboard.has(IClipboard::kPNG) &&
+        clipboard.m_clipboard.has(IClipboard::kBitmap)) {
+        clipboard.m_clipboard.remove(IClipboard::kBitmap);
+    }
+
     // The screen that supplied the data is authoritative. Two screens can
     // grab the clipboard almost simultaneously, so the grab and the data
     // may come from different screens; follow the sender instead of

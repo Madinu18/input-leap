@@ -57,6 +57,7 @@ public:
     // IClipboard overrides
     bool clear() override;
     void add(EFormat, const std::string& data) override;
+    void remove(EFormat format);
     bool open(Time) const override;
     void close() const override;
     Time getTime() const override;
