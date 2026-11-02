@@ -2122,10 +2122,11 @@ bool Server::onMouseMovePrimary(std::int32_t x, std::int32_t y)
 		}
 		x = xs[i], y = ys[i];
 
-		// While a file is dragged from Explorer, keep the pointer on this
-		// screen so the file can be dropped on the transfer line instead of
+		// While a file drag is over a drop zone, keep the pointer on this
+		// screen so the file is dropped on the transfer line instead of
 		// switching to the neighbouring machine.
-		if (m_screen->getPlatformScreen()->is_file_drag_in_progress()) {
+		if (m_screen->getPlatformScreen()->is_file_drag_over_edge() ||
+		    m_screen->getPlatformScreen()->is_file_drag_in_progress()) {
 			noSwitch(xc, yc);
 			return false;
 		}

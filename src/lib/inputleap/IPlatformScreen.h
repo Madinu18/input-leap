@@ -167,6 +167,9 @@ public:
     */
     virtual bool is_file_drag_in_progress() const { return false; }
 
+    //! Return true while a file drag hovers a transfer drop zone.
+    virtual bool is_file_drag_over_edge() const { return false; }
+
     //! Configure which screen edges can receive file drops.
     virtual void transfer_set_peers(const std::vector<EDirection>&)
     {

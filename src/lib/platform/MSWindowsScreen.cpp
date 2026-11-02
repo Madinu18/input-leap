@@ -620,17 +620,29 @@ bool MSWindowsScreen::capture_screenshot(Screenshot& screenshot)
 
 bool MSWindowsScreen::is_file_drag_in_progress() const
 {
-    if (!m_buttons[kButtonLeft]) {
+    const bool hook_button = m_buttons[kButtonLeft];
+    const bool async_button = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+    if (!(hook_button || async_button)) {
         return false;
     }
 
-    const HWND foreground = GetForegroundWindow();
-    if (foreground == nullptr) {
+    HWND window = GetForegroundWindow();
+    if (window == nullptr) {
         return false;
     }
 
     DWORD pid = 0;
-    GetWindowThreadProcessId(foreground, &pid);
+    const DWORD thread = GetWindowThreadProcessId(window, &pid);
+
+    // During an OLE drag the drag source holds the mouse capture; looking at
+    // the capture window is more reliable than the foreground window.
+    GUITHREADINFO info{};
+    info.cbSize = sizeof(info);
+    if (GetGUIThreadInfo(thread, &info) && info.hwndCapture != nullptr) {
+        window = info.hwndCapture;
+        GetWindowThreadProcessId(window, &pid);
+    }
+
     if (pid == 0) {
         return false;
     }
@@ -652,6 +664,10 @@ bool MSWindowsScreen::is_file_drag_in_progress() const
     }
     CloseHandle(process);
     return explorer;
+}
+bool MSWindowsScreen::is_file_drag_over_edge() const
+{
+    return m_transferOverlay != nullptr && m_transferOverlay->has_file_drag();
 }
 
 void MSWindowsScreen::reconfigure(std::uint32_t activeSides)

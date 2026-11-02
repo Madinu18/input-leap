@@ -131,12 +131,15 @@ public:
         return count;
     }
 
-    HRESULT STDMETHODCALLTYPE DragEnter(IDataObject* data, DWORD, POINTL,
+    HRESULT STDMETHODCALLTYPE DragEnter(IDataObject* data, DWORD, POINTL pt,
                                         DWORD* effect) override
     {
         accepted_ = has_files(data);
-        LOG_DEBUG("OLE drag enter on edge %d, files=%d",
-                  static_cast<int>(direction_), accepted_ ? 1 : 0);
+        POINT cursor{};
+        GetCursorPos(&cursor);
+        LOG_DEBUG("OLE drag enter on edge %d, files=%d cursor=%ld,%ld",
+                  static_cast<int>(direction_), accepted_ ? 1 : 0,
+                  cursor.x, cursor.y);
         overlay_->set_file_drag(accepted_);
         overlay_->set_glow(direction_, accepted_);
         *effect = accepted_ ? DROPEFFECT_COPY : DROPEFFECT_NONE;
@@ -152,6 +155,10 @@ public:
 
     HRESULT STDMETHODCALLTYPE DragLeave() override
     {
+        POINT cursor{};
+        GetCursorPos(&cursor);
+        LOG_DEBUG("OLE drag leave on edge %d cursor=%ld,%ld",
+                  static_cast<int>(direction_), cursor.x, cursor.y);
         accepted_ = false;
         overlay_->set_file_drag(false);
         overlay_->set_glow(direction_, false);
@@ -162,9 +169,13 @@ public:
                                    DWORD* effect) override
     {
         std::vector<std::string> files;
-        if (has_files(data)) {
+        const bool had_files = data != nullptr && has_files(data);
+        if (had_files) {
             read_files(data, files);
         }
+        LOG_DEBUG("OLE drop on edge %d, accepted=%d had_files=%d files=%zd",
+                  static_cast<int>(direction_), accepted_ ? 1 : 0,
+                  had_files ? 1 : 0, files.size());
         overlay_->set_glow(direction_, false);
         const bool accepted = accepted_ && !files.empty();
         accepted_ = false;
@@ -403,26 +414,26 @@ void MSWindowsTransferOverlay::position_edge(EdgeWindow& edge)
     switch (edge.direction) {
     case kLeft:
         edge.x = screen_x_;
-        edge.y = screen_y_ + (screen_height_ - line_span(screen_height_)) / 2;
+        edge.y = screen_y_;
         edge.width = kDropZone;
-        edge.height = line_span(screen_height_);
+        edge.height = screen_height_;
         break;
     case kRight:
         edge.x = screen_x_ + screen_width_ - kDropZone;
-        edge.y = screen_y_ + (screen_height_ - line_span(screen_height_)) / 2;
+        edge.y = screen_y_;
         edge.width = kDropZone;
-        edge.height = line_span(screen_height_);
+        edge.height = screen_height_;
         break;
     case kTop:
-        edge.x = screen_x_ + (screen_width_ - line_span(screen_width_)) / 2;
+        edge.x = screen_x_;
         edge.y = screen_y_;
-        edge.width = line_span(screen_width_);
+        edge.width = screen_width_;
         edge.height = kDropZone;
         break;
     case kBottom:
-        edge.x = screen_x_ + (screen_width_ - line_span(screen_width_)) / 2;
+        edge.x = screen_x_;
         edge.y = screen_y_ + screen_height_ - kDropZone;
-        edge.width = line_span(screen_width_);
+        edge.width = screen_width_;
         edge.height = kDropZone;
         break;
     default:
@@ -464,17 +475,22 @@ void MSWindowsTransferOverlay::render_edge(EdgeWindow& edge)
         }
     };
 
+    const int span_vertical = line_span(edge.height);
+    const int start_vertical = (edge.height - span_vertical) / 2;
+    const int span_horizontal = line_span(edge.width);
+    const int start_horizontal = (edge.width - span_horizontal) / 2;
+
     if (show_line) {
         switch (edge.direction) {
         case kLeft:
-            for (int y = 0; y < edge.height; ++y) {
+            for (int y = start_vertical; y < start_vertical + span_vertical; ++y) {
                 for (int x = 0; x < line; ++x) {
                     set_pixel(kLineInset + x, y);
                 }
             }
             break;
         case kRight:
-            for (int y = 0; y < edge.height; ++y) {
+            for (int y = start_vertical; y < start_vertical + span_vertical; ++y) {
                 for (int x = 0; x < line; ++x) {
                     set_pixel(edge.width - 1 - kLineInset - x, y);
                 }
@@ -482,14 +498,14 @@ void MSWindowsTransferOverlay::render_edge(EdgeWindow& edge)
             break;
         case kTop:
             for (int y = 0; y < line; ++y) {
-                for (int x = 0; x < edge.width; ++x) {
+                for (int x = start_horizontal; x < start_horizontal + span_horizontal; ++x) {
                     set_pixel(x, kLineInset + y);
                 }
             }
             break;
         case kBottom:
             for (int y = 0; y < line; ++y) {
-                for (int x = 0; x < edge.width; ++x) {
+                for (int x = start_horizontal; x < start_horizontal + span_horizontal; ++x) {
                     set_pixel(x, edge.height - 1 - kLineInset - y);
                 }
             }
@@ -673,8 +689,13 @@ void MSWindowsTransferOverlay::button_up()
 {
     button_down_ = false;
     dragging_ = false;
-    file_drag_ = false;
-    update_visible();
+
+    // When a file drag is over the drop zone, keep the edge windows mapped
+    // until the drop target receives Drop or DragLeave. Hiding them here
+    // would make OLE cancel the drop and send DragLeave instead.
+    if (!file_drag_) {
+        update_visible();
+    }
 }
 
 void MSWindowsTransferOverlay::hide_lines()

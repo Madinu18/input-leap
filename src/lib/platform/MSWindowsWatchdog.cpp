@@ -285,7 +285,11 @@ MSWindowsWatchdog::startProcess()
     if (!m_daemonized) {
         createRet = doStartProcessAsSelf(m_command);
     } else {
-        m_autoElevated = activeDesktopName() != "Default";
+        // Only elevate when the user explicitly asked for it (Elevate
+        // always). Auto-elevating because the active desktop is not
+        // "Default" makes the whole process elevated and blocks shell drag
+        // and drop (UIPI), which breaks file transfer.
+        m_autoElevated = false;
 
         SECURITY_ATTRIBUTES sa{ 0 };
         HANDLE userToken = getUserToken(&sa);
