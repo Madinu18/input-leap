@@ -71,26 +71,26 @@ QPushButton:disabled {
 QPushButton:focus {
     border-color: #2f6fed;
 }
-QPushButton#m_pButtonStart {
+QPushButton#m_pButtonToggleStart {
     background-color: #2f6fed;
     border: 1px solid #2f6fed;
     color: #ffffff;
     font-weight: 600;
 }
-QPushButton#m_pButtonStart:hover {
+QPushButton#m_pButtonToggleStart:hover {
     background-color: #3d7bf5;
 }
-QPushButton#m_pButtonStart:disabled {
+QPushButton#m_pButtonToggleStart:disabled {
     background-color: #1d3055;
     border-color: #1d3055;
     color: #7f95b8;
 }
-QPushButton#m_pButtonStop {
+QPushButton#m_pButtonToggleStart[running="true"] {
     background-color: #2a2130;
     border: 1px solid #4a2b3a;
     color: #ffb4c2;
 }
-QPushButton#m_pButtonStop:hover {
+QPushButton#m_pButtonToggleStart[running="true"]:hover {
     background-color: #3a283f;
 }
 

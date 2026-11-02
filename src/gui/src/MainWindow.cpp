@@ -923,6 +923,9 @@ void MainWindow::set_connection_state(AppConnectionState state)
         disconnect(ui_->m_pButtonToggleStart, &QPushButton::clicked, ui_->m_pActionStartCmdApp, &QAction::trigger);
         connect(ui_->m_pButtonToggleStart, &QPushButton::clicked, ui_->m_pActionStopCmdApp, &QAction::trigger);
         ui_->m_pButtonToggleStart->setText(tr("&Stop"));
+        ui_->m_pButtonToggleStart->setProperty("running", true);
+        ui_->m_pButtonToggleStart->style()->unpolish(ui_->m_pButtonToggleStart);
+        ui_->m_pButtonToggleStart->style()->polish(ui_->m_pButtonToggleStart);
         ui_->m_pButtonReload->setEnabled(true);
     }
     else if (state == AppConnectionState::DISCONNECTED)
@@ -930,6 +933,9 @@ void MainWindow::set_connection_state(AppConnectionState state)
         disconnect(ui_->m_pButtonToggleStart, &QPushButton::clicked, ui_->m_pActionStopCmdApp, &QAction::trigger);
         connect(ui_->m_pButtonToggleStart, &QPushButton::clicked, ui_->m_pActionStartCmdApp, &QAction::trigger);
         ui_->m_pButtonToggleStart->setText(tr("&Start"));
+        ui_->m_pButtonToggleStart->setProperty("running", false);
+        ui_->m_pButtonToggleStart->style()->unpolish(ui_->m_pButtonToggleStart);
+        ui_->m_pButtonToggleStart->style()->polish(ui_->m_pButtonToggleStart);
         ui_->m_pButtonReload->setEnabled(false);
     }
 
