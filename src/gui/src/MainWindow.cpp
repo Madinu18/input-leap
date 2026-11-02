@@ -43,6 +43,10 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
 #include <QFileDialog>
 #include <QDesktopServices>
 #include <QRegularExpression>
@@ -146,6 +150,24 @@ MainWindow::MainWindow(QSettings& settings, AppConfig& appConfig) :
 
     ui_->setupUi(this);
     setWindowIcon(QIcon(APP_LARGE_ICON));
+
+#ifdef Q_OS_WIN
+    // Match the dark theme in the native title bar (Windows 10 1809+).
+    if (HWND handle = reinterpret_cast<HWND>(winId())) {
+        using DwmSetWindowAttributeFn =
+            HRESULT(WINAPI*)(HWND, DWORD, LPCVOID, DWORD);
+        if (HMODULE dwm = LoadLibraryW(L"dwmapi.dll")) {
+            if (auto set_attribute =
+                    reinterpret_cast<DwmSetWindowAttributeFn>(
+                        GetProcAddress(dwm, "DwmSetWindowAttribute"))) {
+                BOOL dark = TRUE;
+                set_attribute(handle, 20, &dark, sizeof(dark));
+            }
+            FreeLibrary(dwm);
+        }
+    }
+#endif
+
     createMenuBar();
     loadSettings();
     initConnections();
