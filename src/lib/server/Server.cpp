@@ -796,11 +796,10 @@ BaseClientProxy* Server::mapToNeighbor(BaseClientProxy* src, EDirection srcSide,
 void Server::avoidJumpZone(BaseClientProxy* dst, EDirection dir, std::int32_t& x,
                            std::int32_t& y) const
 {
-	// we only need to avoid jump zones on the primary screen
-	if (dst != m_primaryClient) {
-		return;
-	}
-
+    // Move the entry position inside the destination screen so the
+    // destination's own jump zone does not immediately switch us back.
+    // This used to be primary-only, which made secondary clients bounce
+    // back and forth at the edge (enter/leave every couple of seconds).
     const std::string dstName(getName(dst));
 	std::int32_t dx, dy, dw, dh;
 	dst->getShape(dx, dy, dw, dh);
