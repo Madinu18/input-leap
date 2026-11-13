@@ -97,6 +97,7 @@ private:
     void update_animation();
     void position_edge(EdgeWindow& edge);
     void render_edge(EdgeWindow& edge);
+    bool edge_is_near(const EdgeWindow& edge) const;
 
     EdgeWindow* window_to_edge(HWND window);
     EdgeWindow* direction_to_edge(EDirection direction);
@@ -115,6 +116,10 @@ private:
     int screen_y_ = 0;
     int screen_width_ = 0;
     int screen_height_ = 0;
+    //! Screen bounds minus the taskbar/appbars, used so the overlay windows
+    //! never cover the taskbar (which can make it stop repainting and
+    //! swallow clicks).
+    RECT work_area_{};
 
     bool button_down_ = false;
     bool dragging_ = false;
@@ -127,6 +132,8 @@ private:
 
     bool progress_visible_ = false;
     bool progress_sending_ = false;
+    //! When a file drop is expected after the button was released.
+    ULONGLONG drop_wait_until_ = 0;
     std::string progress_name_;
     std::uint64_t progress_done_ = 0;
     std::uint64_t progress_total_ = 0;

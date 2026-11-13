@@ -76,6 +76,10 @@ std::string format_bytes(std::uint64_t bytes)
     return buffer;
 }
 
+//! How long to keep the drop zones mapped after the button was released,
+//! waiting for OLE to deliver Drop or DragLeave.
+constexpr ULONGLONG kDropWaitMs = 3000;
+
 bool is_process_elevated()
 {
     HANDLE token = nullptr;
@@ -284,13 +288,29 @@ LRESULT MSWindowsTransferOverlay::handle_message(HWND window, UINT message,
     }
 
     if (message == WM_TIMER && wparam == 1) {
+        // A button release can be missed (for example when it happened while
+        // the pointer was on another machine) and a drag source that dies
+        // never sends DragLeave. Drop the stale drag state instead of leaving
+        // the transfer line on screen forever.
+        if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) {
+            if (dragging_ || button_down_) {
+                LOG_DEBUG("releasing stale transfer drag state");
+                hide_lines();
+            }
+            else if (file_drag_ && drop_wait_until_ != 0 &&
+                     GetTickCount64() > drop_wait_until_) {
+                LOG_DEBUG("dropping stale transfer drop wait");
+                hide_lines();
+            }
+        }
+
         ++pulse_phase_;
         if (pulse_phase_ > 400) {
             pulse_phase_ = 0;
         }
         if (dragging_ && (file_drag_ || elevated_)) {
             for (EdgeWindow& edge : edges_) {
-                if (edge.visible) {
+                if (edge.visible && (file_drag_ || edge_is_near(edge))) {
                     render_edge(edge);
                 }
             }
@@ -360,7 +380,11 @@ void MSWindowsTransferOverlay::create_windows()
     window_class.hInstance = instance_;
     window_class.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
     window_class.lpszClassName = L"InputLeapTransferOverlay";
-    window_class.style = CS_DROPSHADOW;
+    // Do not use CS_DROPSHADOW here. Windows keeps the drop shadow (a
+    // separate "SysShadow" window) visible after these windows are hidden
+    // again, which leaves a dark line along the screen edge even when no
+    // file is being dragged. The edge windows are invisible hit targets and
+    // the progress card draws its own border, so no shadow is needed.
     window_class_ = RegisterClassExW(&window_class);
 
     if (window_class_ == 0) {
@@ -429,6 +453,31 @@ void MSWindowsTransferOverlay::set_geometry()
     screen_width_ = GetSystemMetrics(SM_CXVIRTUALSCREEN);
     screen_height_ = GetSystemMetrics(SM_CYVIRTUALSCREEN);
 
+    work_area_.left = screen_x_;
+    work_area_.top = screen_y_;
+    work_area_.right = screen_x_ + screen_width_;
+    work_area_.bottom = screen_y_ + screen_height_;
+
+    // Keep the drop zones off the taskbar. A topmost window that overlaps the
+    // taskbar can leave it blank/unclickable, so only use the work area when
+    // it matches the primary monitor (the common case).
+    if (screen_width_ == GetSystemMetrics(SM_CXSCREEN) &&
+        screen_height_ == GetSystemMetrics(SM_CYSCREEN)) {
+        RECT primary_work{};
+        if (SystemParametersInfoW(SPI_GETWORKAREA, 0, &primary_work, 0)) {
+            work_area_ = primary_work;
+        }
+    }
+
+    if (work_area_.right - work_area_.left < kDropZone) {
+        work_area_.left = screen_x_;
+        work_area_.right = screen_x_ + screen_width_;
+    }
+    if (work_area_.bottom - work_area_.top < kDropZone) {
+        work_area_.top = screen_y_;
+        work_area_.bottom = screen_y_ + screen_height_;
+    }
+
     for (EdgeWindow& edge : edges_) {
         position_edge(edge);
     }
@@ -453,29 +502,32 @@ void MSWindowsTransferOverlay::position_edge(EdgeWindow& edge)
         return;
     }
 
+    const int work_width = work_area_.right - work_area_.left;
+    const int work_height = work_area_.bottom - work_area_.top;
+
     switch (edge.direction) {
     case kLeft:
         edge.x = screen_x_;
-        edge.y = screen_y_;
+        edge.y = work_area_.top;
         edge.width = kDropZone;
-        edge.height = screen_height_;
+        edge.height = work_height;
         break;
     case kRight:
         edge.x = screen_x_ + screen_width_ - kDropZone;
-        edge.y = screen_y_;
+        edge.y = work_area_.top;
         edge.width = kDropZone;
-        edge.height = screen_height_;
+        edge.height = work_height;
         break;
     case kTop:
-        edge.x = screen_x_;
+        edge.x = work_area_.left;
         edge.y = screen_y_;
-        edge.width = screen_width_;
+        edge.width = work_width;
         edge.height = kDropZone;
         break;
     case kBottom:
-        edge.x = screen_x_;
-        edge.y = screen_y_ + screen_height_ - kDropZone;
-        edge.width = screen_width_;
+        edge.x = work_area_.left;
+        edge.y = work_area_.bottom - kDropZone;
+        edge.width = work_width;
         edge.height = kDropZone;
         break;
     default:
@@ -494,14 +546,15 @@ void MSWindowsTransferOverlay::render_edge(EdgeWindow& edge)
         return;
     }
 
-    // Only paint the accent line once a file drag is over the edge, or when
-    // the process is elevated and the legacy WM_DROPFILES path gives us no
-    // early warning. The rest of the drop zone stays hit-testable with the
-    // smallest non-zero alpha.
+    // Only paint the accent line once a file drag is over the edge. When the
+    // process is elevated the OLE drag never reaches us (UIPI), so light the
+    // line when the pointer is inside the drop zone instead of painting it
+    // during every unrelated drag on the desktop. The rest of the drop zone
+    // stays hit-testable with the smallest non-zero alpha.
 
     // Neon line: a bright core with a soft gradient halo. The pulse
     // animation modulates the intensity while a file drag is active.
-    const bool show_line = file_drag_ || elevated_;
+    const bool show_line = file_drag_ || (elevated_ && edge_is_near(edge));
     const double pulse = 0.72 + 0.28 * std::sin(pulse_phase_ * 0.16);
     const int thickness = edge.glowing ? 8 : 6;
     const int halo = edge.glowing ? kPulseRadius : 12;
@@ -646,30 +699,28 @@ void MSWindowsTransferOverlay::update_visible()
 void MSWindowsTransferOverlay::update_glow()
 {
     for (EdgeWindow& edge : edges_) {
-        bool is_near = false;
-        switch (edge.direction) {
-        case kLeft:
-            is_near = last_x_ - screen_x_ <= kDropZone;
-            break;
-        case kRight:
-            is_near = (screen_x_ + screen_width_ - 1) - last_x_ <= kDropZone;
-            break;
-        case kTop:
-            is_near = last_y_ - screen_y_ <= kDropZone;
-            break;
-        case kBottom:
-            is_near = (screen_y_ + screen_height_ - 1) - last_y_ <= kDropZone;
-            break;
-        default:
-            break;
-        }
-
         const bool glowing = edge.visible && dragging_ &&
-                             (file_drag_ || elevated_) && is_near;
+                             (file_drag_ || elevated_) && edge_is_near(edge);
         if (glowing != edge.glowing) {
             edge.glowing = glowing;
             render_edge(edge);
         }
+    }
+}
+
+bool MSWindowsTransferOverlay::edge_is_near(const EdgeWindow& edge) const
+{
+    switch (edge.direction) {
+    case kLeft:
+        return last_x_ - work_area_.left <= kDropZone;
+    case kRight:
+        return work_area_.right - last_x_ <= kDropZone;
+    case kTop:
+        return last_y_ - work_area_.top <= kDropZone;
+    case kBottom:
+        return work_area_.bottom - last_y_ <= kDropZone;
+    default:
+        return false;
     }
 }
 
@@ -680,8 +731,8 @@ void MSWindowsTransferOverlay::update_animation()
         return;
     }
 
-    const bool needed = progress_visible_ ||
-                        (dragging_ && (file_drag_ || elevated_));
+    const bool needed = progress_visible_ || dragging_ || button_down_ ||
+                        file_drag_;
     if (needed && !animation_timer_) {
         SetTimer(host, 1, 33, nullptr);
         animation_timer_ = true;
@@ -709,6 +760,9 @@ void MSWindowsTransferOverlay::set_file_drag(bool active)
     }
 
     file_drag_ = active;
+    if (!active) {
+        drop_wait_until_ = 0;
+    }
     for (EdgeWindow& edge : edges_) {
         if (edge.visible) {
             render_edge(edge);
@@ -741,6 +795,7 @@ void MSWindowsTransferOverlay::resume_drag()
     button_down_ = true;
     dragging_ = true;
     file_drag_ = false;
+    drop_wait_until_ = 0;
     start_x_ = position.x;
     start_y_ = position.y;
     last_x_ = position.x;
@@ -777,7 +832,10 @@ void MSWindowsTransferOverlay::button_up()
     // When a file drag is over the drop zone, keep the edge windows mapped
     // until the drop target receives Drop or DragLeave. Hiding them here
     // would make OLE cancel the drop and send DragLeave instead.
-    if (!file_drag_) {
+    if (file_drag_) {
+        drop_wait_until_ = GetTickCount64() + kDropWaitMs;
+    }
+    else {
         update_visible();
         update_animation();
     }
@@ -788,7 +846,9 @@ void MSWindowsTransferOverlay::hide_lines()
     button_down_ = false;
     dragging_ = false;
     file_drag_ = false;
+    drop_wait_until_ = 0;
     update_visible();
+    update_animation();
 }
 
 void MSWindowsTransferOverlay::drop_files(EDirection direction,
@@ -805,6 +865,7 @@ void MSWindowsTransferOverlay::drop_files(EDirection direction,
 
     dragging_ = false;
     file_drag_ = false;
+    drop_wait_until_ = 0;
     update_visible();
     update_animation();
 }
