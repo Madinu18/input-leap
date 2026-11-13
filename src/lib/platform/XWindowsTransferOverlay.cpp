@@ -125,6 +125,8 @@ XWindowsTransferOverlay::XWindowsTransferOverlay(Display* display, Window root,
     colormap_ = DefaultColormap(display_, DefaultScreen(display_));
     normal_color_ = alloc_color(display_, colormap_, "#2f6fed");
     glow_color_ = alloc_color(display_, colormap_, "#8bdcff");
+    normal_argb_ = 0xFF2F6FED;
+    glow_argb_ = 0xFF8BDCFF;
 
     create_windows();
 }
@@ -150,17 +152,35 @@ XWindowsTransferOverlay::~XWindowsTransferOverlay()
 
 void XWindowsTransferOverlay::create_windows()
 {
+    XVisualInfo vinfo{};
+    if (XMatchVisualInfo(display_, DefaultScreen(display_), 32, TrueColor,
+                         &vinfo)) {
+        argb_visual_ = vinfo.visual;
+        argb_colormap_ = XCreateColormap(display_, root_, argb_visual_,
+                                         AllocNone);
+    }
+
     XSetWindowAttributes attributes{};
     attributes.override_redirect = True;
-    attributes.background_pixel = normal_color_;
+    // Fully transparent background: the drop zone must stay hit-testable for
+    // XDND but must not paint anything unless a file drag is over it.
+    attributes.background_pixel = 0;
     attributes.event_mask = ExposureMask;
 
-    const long mask = CWOverrideRedirect | CWBackPixel | CWEventMask;
+    long mask = CWOverrideRedirect | CWBackPixel | CWEventMask;
+    int depth = CopyFromParent;
+    Visual* visual = CopyFromParent;
+    if (argb_visual_ != nullptr) {
+        attributes.colormap = argb_colormap_;
+        mask |= CWColormap;
+        depth = 32;
+        visual = argb_visual_;
+    }
 
     for (EdgeWindow& edge : edges_) {
         edge.window = XCreateWindow(
             display_, root_, 0, 0, 1, 1, 0,
-            CopyFromParent, InputOutput, CopyFromParent, mask, &attributes);
+            depth, InputOutput, visual, mask, &attributes);
         if (edge.window == None) {
             continue;
         }
@@ -171,6 +191,10 @@ void XWindowsTransferOverlay::create_windows()
                         reinterpret_cast<unsigned char*>(&version), 1);
         XUnmapWindow(display_, edge.window);
     }
+
+    if (line_gc_ == nullptr) {
+        line_gc_ = XCreateGC(display_, root_, 0, nullptr);
+    }
 }
 
 void XWindowsTransferOverlay::destroy_windows()
@@ -180,6 +204,15 @@ void XWindowsTransferOverlay::destroy_windows()
             XDestroyWindow(display_, edge.window);
             edge.window = None;
         }
+    }
+
+    if (line_gc_ != nullptr) {
+        XFreeGC(display_, line_gc_);
+        line_gc_ = nullptr;
+    }
+    if (argb_colormap_ != None) {
+        XFreeColormap(display_, argb_colormap_);
+        argb_colormap_ = None;
     }
 }
 
@@ -257,51 +290,78 @@ void XWindowsTransferOverlay::shape_window(EdgeWindow& edge)
         return;
     }
 
-    const int line = edge.glowing ? kGlowWidth : kLineWidth;
-    XRectangle line_rect{0, 0, 0, 0};
-
-    switch (edge.direction) {
-    case kLeft:
-        line_rect = {0, 0, static_cast<unsigned short>(line),
-                     static_cast<unsigned short>(attributes.height)};
-        break;
-    case kRight:
-        line_rect = {static_cast<short>(attributes.width - line), 0,
-                     static_cast<unsigned short>(line),
-                     static_cast<unsigned short>(attributes.height)};
-        break;
-    case kTop:
-        line_rect = {0, 0, static_cast<unsigned short>(attributes.width),
-                     static_cast<unsigned short>(line)};
-        break;
-    case kBottom:
-        line_rect = {0, static_cast<short>(attributes.height - line),
-                     static_cast<unsigned short>(attributes.width),
-                     static_cast<unsigned short>(line)};
-        break;
-    default:
-        return;
-    }
-
+    // The window is transparent (ARGB), so the whole window can stay mapped
+    // and hit-testable for XDND; only the input shape matters.
     XRectangle input_rect = {
         0, 0, static_cast<unsigned short>(attributes.width),
         static_cast<unsigned short>(attributes.height)};
 
-    XShapeCombineRectangles(display_, edge.window, ShapeBounding, 0, 0,
-                            &line_rect, 1, ShapeSet, Unsorted);
     XShapeCombineRectangles(display_, edge.window, ShapeInput, 0, 0,
                             &input_rect, 1, ShapeSet, Unsorted);
-    XClearWindow(display_, edge.window);
 }
 
 void XWindowsTransferOverlay::set_edge_color(EdgeWindow& edge, bool glowing)
 {
-    if (edge.window == None) {
+    if (edge.window == None || line_gc_ == nullptr) {
         return;
     }
-    XSetWindowBackground(display_, edge.window,
-                         glowing ? glow_color_ : normal_color_);
-    XClearWindow(display_, edge.window);
+
+    XWindowAttributes attributes;
+    if (XGetWindowAttributes(display_, edge.window, &attributes) == 0 ||
+        attributes.width <= 0 || attributes.height <= 0) {
+        return;
+    }
+
+    // Clear to fully transparent first.
+    XSetForeground(display_, line_gc_, 0x00000000);
+    XFillRectangle(display_, edge.window, line_gc_, 0, 0,
+                   attributes.width, attributes.height);
+
+    if (!glowing) {
+        XFlush(display_);
+        return;
+    }
+
+    const int line = kGlowWidth;
+    XSetForeground(display_, line_gc_, glow_argb_);
+    switch (edge.direction) {
+    case kLeft:
+        XFillRectangle(display_, edge.window, line_gc_, 0, 0, line,
+                       attributes.height);
+        break;
+    case kRight:
+        XFillRectangle(display_, edge.window, line_gc_,
+                       attributes.width - line, 0, line, attributes.height);
+        break;
+    case kTop:
+        XFillRectangle(display_, edge.window, line_gc_, 0, 0,
+                       attributes.width, line);
+        break;
+    case kBottom:
+        XFillRectangle(display_, edge.window, line_gc_, 0,
+                       attributes.height - line, attributes.width, line);
+        break;
+    default:
+        break;
+    }
+    XFlush(display_);
+}
+
+bool XWindowsTransferOverlay::edge_is_near(const EdgeWindow& edge) const
+{
+    const int margin = kDropZone * 2;
+    switch (edge.direction) {
+    case kLeft:
+        return last_x_ - x_ <= margin;
+    case kRight:
+        return (x_ + width_ - 1) - last_x_ <= margin;
+    case kTop:
+        return last_y_ - y_ <= margin;
+    case kBottom:
+        return (y_ + height_ - 1) - last_y_ <= margin;
+    default:
+        return false;
+    }
 }
 
 void XWindowsTransferOverlay::update_visible()
@@ -309,13 +369,17 @@ void XWindowsTransferOverlay::update_visible()
     for (EdgeWindow& edge : edges_) {
         const bool peer = std::find(peers_.begin(), peers_.end(),
                                     edge.direction) != peers_.end();
-        const bool should_show = dragging_ && peer;
+        const bool near = edge_is_near(edge);
+        const bool should_show = dragging_ && peer &&
+            (near || (xdnd_active_ && xdnd_edge_ == edge.direction));
         if (should_show == edge.visible) {
             continue;
         }
 
         edge.visible = should_show;
         if (should_show) {
+            shape_window(edge);
+            set_edge_color(edge, edge.glowing);
             XMapRaised(display_, edge.window);
         }
         else {
@@ -331,46 +395,15 @@ void XWindowsTransferOverlay::update_visible()
 
 void XWindowsTransferOverlay::update_glow()
 {
-    if (!dragging_) {
-        for (EdgeWindow& edge : edges_) {
-            if (edge.glowing) {
-                edge.glowing = false;
-                shape_window(edge);
-                set_edge_color(edge, false);
-            }
-        }
-        XFlush(display_);
-        return;
-    }
-
     for (EdgeWindow& edge : edges_) {
-        bool near = false;
-        switch (edge.direction) {
-        case kLeft:
-            near = last_x_ - x_ <= kDropZone;
-            break;
-        case kRight:
-            near = (x_ + width_ - 1) - last_x_ <= kDropZone;
-            break;
-        case kTop:
-            near = last_y_ - y_ <= kDropZone;
-            break;
-        case kBottom:
-            near = (y_ + height_ - 1) - last_y_ <= kDropZone;
-            break;
-        default:
-            break;
-        }
-
-        const bool glowing = edge.visible &&
-            (near || (xdnd_active_ && xdnd_edge_ == edge.direction));
-        if (glowing == edge.glowing) {
+        const bool active = edge.visible && xdnd_active_ &&
+                            xdnd_edge_ == edge.direction;
+        if (active == edge.glowing) {
             continue;
         }
 
-        edge.glowing = glowing;
-        shape_window(edge);
-        set_edge_color(edge, glowing);
+        edge.glowing = active;
+        set_edge_color(edge, active);
     }
     XFlush(display_);
 }
@@ -400,6 +433,7 @@ void XWindowsTransferOverlay::motion(int x, int y)
         update_visible();
     }
     else if (dragging_) {
+        update_visible();
         update_glow();
     }
 }
@@ -445,7 +479,7 @@ void XWindowsTransferOverlay::handle_event(XEvent* event)
         else {
             for (EdgeWindow& edge : edges_) {
                 if (edge.window == event->xexpose.window) {
-                    XClearWindow(display_, edge.window);
+                    set_edge_color(edge, edge.glowing);
                     break;
                 }
             }

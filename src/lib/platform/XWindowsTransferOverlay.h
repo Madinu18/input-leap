@@ -72,6 +72,7 @@ private:
     void update_glow();
     void position_window(EdgeWindow& edge);
     void shape_window(EdgeWindow& edge);
+    bool edge_is_near(const EdgeWindow& edge) const;
     void set_edge_color(EdgeWindow& edge, bool glowing);
     void create_progress_window();
     void draw_progress();
@@ -128,6 +129,13 @@ private:
     Colormap colormap_ = None;
     unsigned long normal_color_ = 0;
     unsigned long glow_color_ = 0;
+
+    // ARGB visual for a fully transparent (but still hittable) drop zone.
+    Visual* argb_visual_ = nullptr;
+    Colormap argb_colormap_ = None;
+    GC line_gc_ = nullptr;
+    unsigned long normal_argb_ = 0;
+    unsigned long glow_argb_ = 0;
 
     Window progress_window_ = None;
     GC progress_gc_ = nullptr;
