@@ -257,30 +257,39 @@ void XWindowsTransferOverlay::shape_window(EdgeWindow& edge)
         return;
     }
 
+    // Only draw the accent line while a real file drag (XDND with a
+    // text/uri-list payload) is over this edge. The window stays mapped and
+    // keeps its full input shape so XDND can still target it, but an empty
+    // bounding shape means nothing is painted during ordinary drags such as
+    // moving a window or selecting text.
+    const bool show_line = xdnd_active_ && xdnd_edge_ == edge.direction;
+
     const int line = edge.glowing ? kGlowWidth : kLineWidth;
     XRectangle line_rect{0, 0, 0, 0};
 
-    switch (edge.direction) {
-    case kLeft:
-        line_rect = {0, 0, static_cast<unsigned short>(line),
-                     static_cast<unsigned short>(attributes.height)};
-        break;
-    case kRight:
-        line_rect = {static_cast<short>(attributes.width - line), 0,
-                     static_cast<unsigned short>(line),
-                     static_cast<unsigned short>(attributes.height)};
-        break;
-    case kTop:
-        line_rect = {0, 0, static_cast<unsigned short>(attributes.width),
-                     static_cast<unsigned short>(line)};
-        break;
-    case kBottom:
-        line_rect = {0, static_cast<short>(attributes.height - line),
-                     static_cast<unsigned short>(attributes.width),
-                     static_cast<unsigned short>(line)};
-        break;
-    default:
-        return;
+    if (show_line) {
+        switch (edge.direction) {
+        case kLeft:
+            line_rect = {0, 0, static_cast<unsigned short>(line),
+                         static_cast<unsigned short>(attributes.height)};
+            break;
+        case kRight:
+            line_rect = {static_cast<short>(attributes.width - line), 0,
+                         static_cast<unsigned short>(line),
+                         static_cast<unsigned short>(attributes.height)};
+            break;
+        case kTop:
+            line_rect = {0, 0, static_cast<unsigned short>(attributes.width),
+                         static_cast<unsigned short>(line)};
+            break;
+        case kBottom:
+            line_rect = {0, static_cast<short>(attributes.height - line),
+                         static_cast<unsigned short>(attributes.width),
+                         static_cast<unsigned short>(line)};
+            break;
+        default:
+            return;
+        }
     }
 
     XRectangle input_rect = {
@@ -316,6 +325,8 @@ void XWindowsTransferOverlay::update_visible()
 
         edge.visible = should_show;
         if (should_show) {
+            shape_window(edge);
+            set_edge_color(edge, edge.glowing);
             XMapRaised(display_, edge.window);
         }
         else {
@@ -331,46 +342,16 @@ void XWindowsTransferOverlay::update_visible()
 
 void XWindowsTransferOverlay::update_glow()
 {
-    if (!dragging_) {
-        for (EdgeWindow& edge : edges_) {
-            if (edge.glowing) {
-                edge.glowing = false;
-                shape_window(edge);
-                set_edge_color(edge, false);
-            }
-        }
-        XFlush(display_);
-        return;
-    }
-
     for (EdgeWindow& edge : edges_) {
-        bool near = false;
-        switch (edge.direction) {
-        case kLeft:
-            near = last_x_ - x_ <= kDropZone;
-            break;
-        case kRight:
-            near = (x_ + width_ - 1) - last_x_ <= kDropZone;
-            break;
-        case kTop:
-            near = last_y_ - y_ <= kDropZone;
-            break;
-        case kBottom:
-            near = (y_ + height_ - 1) - last_y_ <= kDropZone;
-            break;
-        default:
-            break;
-        }
-
-        const bool glowing = edge.visible &&
-            (near || (xdnd_active_ && xdnd_edge_ == edge.direction));
-        if (glowing == edge.glowing) {
+        const bool active = edge.visible && xdnd_active_ &&
+                            xdnd_edge_ == edge.direction;
+        if (active == edge.glowing) {
             continue;
         }
 
-        edge.glowing = glowing;
+        edge.glowing = active;
         shape_window(edge);
-        set_edge_color(edge, glowing);
+        set_edge_color(edge, active);
     }
     XFlush(display_);
 }
